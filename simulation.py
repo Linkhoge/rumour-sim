@@ -5,7 +5,7 @@ Module: Agent-based simulation project (serial + parallel)
 
 Comment tags:
     ARTICLE:  from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1
-    OUR OWN:  added or changed by us. README reference numbers given where an idea is from research.
+    Comments without a tag are ours. README reference numbers are given where an idea is from research.
 
 File: simulation.py
 Setting up agents, spreading rule, one simulation step, main loop. Movement is in movement.py.
@@ -18,8 +18,9 @@ from movement import GROUP_CENTRES, randomPointNear, randomPointInBox, moveAgent
 
 def makeAgents(n, seed, noGroupFraction, leash):
     # ARTICLE: loop that makes agents with random x, y.
-    # OUR OWN: most agents belong to a group (shared out evenly) and start near its meeting point.
+    # Most agents belong to a group (shared out evenly) and start near its meeting point.
     # Some agents belong to no group and start anywhere in the box.
+    # The seed is set here, so one seed decides the whole run (setup and every step after it).
     np.random.seed(seed)
     agents = []
     for i in range(n):
@@ -34,7 +35,7 @@ def makeAgents(n, seed, noGroupFraction, leash):
 
 
 def seedSpreaders(agents, howMany, group):
-    # ARTICLE: seed a few infected agents. OUR OWN: all from ONE group so we can watch it reach the others.
+    # ARTICLE: seed a few infected agents. Ours all come from ONE group so we can watch it reach the others.
     # With howMany = 1 this is "patient zero".
     inGroup = [i for i in range(len(agents)) if agents[i].group == group]
     for i in np.random.choice(inGroup, howMany, replace=False):
@@ -43,8 +44,9 @@ def seedSpreaders(agents, howMany, group):
 
 
 def pickSubject(agents, group):
-    # OUR OWN: the rumour is ABOUT one agent (the subject). They are an ordinary member of a group (choose a
-    # different group to patient zero) and are not patient zero. They are not told, they find out like anyone else.
+    # The rumour is ABOUT one agent (the subject). They are an ordinary member of the chosen group
+    # (pick a different group to patient zero) and are not patient zero. Nobody tells them first,
+    # they find out like anyone else.
     options = [i for i in range(len(agents)) if agents[i].group == group and agents[i].state == UNAWARE]
     i = int(np.random.choice(options))
     agents[i].isSubject = True
@@ -52,7 +54,7 @@ def pickSubject(agents, group):
 
 
 def seedCorrectors(agents, howMany, t):
-    # OUR OWN: a few unaware agents start spreading the correction
+    # a few unaware agents start spreading the correction
     unaware = [i for i in range(len(agents)) if agents[i].state == UNAWARE]
     if len(unaware) == 0:
         return agents
@@ -75,7 +77,7 @@ def getState(agents):
 
 
 def pickSource(closeRow, old, wanted):
-    # OUR OWN: if several nearby agents could have passed it on, pick one of them at random
+    # if several nearby agents could have passed it on, pick one of them at random
     options = np.where(closeRow & (old == wanted))[0]
     if len(options) == 0:
         return -1
@@ -85,13 +87,15 @@ def pickSource(closeRow, old, wanted):
 def rollSpread(agents, t, contactRadius, rumourStrength, correctionStrength, minInterest=1.0, subjectDenies=1.0):
     # ARTICLE: rollInfect. Distance matrix, then agents within a set distance can pass it on,
     #   with a random roll against resistance (infected if roll > resistance).
-    # OUR OWN: roll < gullibility (same idea flipped), two competing messages, and decisions use the
-    #   OLD states then get applied at the end, so the order of agents does not matter
-    #   (the article changes agents while looping, which depends on the order).
-    #   We also record WHO passed it on, so we can draw who told who.
-    # OUR OWN: hearing it is not the same as passing it on. Someone who hears the rumour passes it on with chance
-    #   minInterest + (1 - minInterest) * their interest. Otherwise they do not believe it or do not care: they become
-    #   a stifler at once and stay in the simulation. The subject, when they hear it, denies it (becomes a corrector).
+    # Changes from the article:
+    #   - roll < gullibility (same idea flipped), and two competing messages (rumour and correction).
+    #   - decisions use the OLD states and are applied at the end, so the order of agents does not matter
+    #     (the article changes agents while looping, which depends on the order).
+    #   - we record WHO passed it on, so we can draw who told who.
+    #   - hearing it is not the same as passing it on. Someone who hears the rumour passes it on with chance
+    #     minInterest + (1 - minInterest) * their interest. Otherwise they do not believe it or do not care:
+    #     they become a stifler at once and stay in the simulation.
+    #   - the subject, when they hear it, denies it (becomes a corrector).
     positions = getPosition(agents)
     dist = distance_matrix(positions, positions)
     close = dist < contactRadius
@@ -106,7 +110,7 @@ def rollSpread(agents, t, contactRadius, rumourStrength, correctionStrength, min
     newStates = list(old)
     rumourFrom = [-1] * len(agents)
     correctFrom = [-1] * len(agents)
-    how = ["correct"] * len(agents)               # OUR OWN: why the state changed (spread, ignore, subject, correct)
+    how = ["correct"] * len(agents)               # why the state changed (spread, ignore, subject, correct)
     for i in range(len(agents)):
         g = agents[i].gullibility
         pRumour = 1 - (1 - g * rumourStrength) ** nr[i]                    # more contacts, more chances
@@ -138,7 +142,7 @@ def rollSpread(agents, t, contactRadius, rumourStrength, correctionStrength, min
                 newStates[i] = CORRECTOR
                 correctFrom[i] = pickSource(close[i], old, CORRECTOR)
         elif old[i] == SPREADER:
-            if np.random.uniform() < pCorrect:     # OUR OWN: spreader changes their mind (README ref 6)
+            if np.random.uniform() < pCorrect:     # spreader changes their mind (README ref 6)
                 newStates[i] = CORRECTOR
                 correctFrom[i] = pickSource(close[i], old, CORRECTOR)
 
@@ -184,7 +188,7 @@ def countStates(agents):
 
 
 def countSpreadersByGroup(agents):
-    # OUR OWN: spreaders per home group. Index 0 = no group, then groups A, B, C, D.
+    # spreaders per home group. Index 0 = no group, then groups A, B, C, D.
     counts = [0] * (len(GROUP_CENTRES) + 1)
     for a in agents:
         if a.state == SPREADER:
@@ -193,7 +197,7 @@ def countSpreadersByGroup(agents):
 
 
 def transmissionStats(agents):
-    # OUR OWN: numbers about who told who, for the report
+    # numbers about who told who, for the report
     ever = [i for i in range(len(agents)) if agents[i].generation >= 0]
     children = {}
     for a in agents:

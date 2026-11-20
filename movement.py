@@ -5,7 +5,7 @@ Module: Agent-based simulation project (serial + parallel)
 
 Comment tags:
     ARTICLE:  from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1
-    OUR OWN:  added or changed by us. README reference numbers given where an idea is from research.
+    Comments without a tag are ours. README reference numbers are given where an idea is from research.
 
 File: movement.py
 All movement logic lives here. Everyone shares one box (no walls). Each group hangs around a meeting
@@ -15,12 +15,12 @@ import numpy as np
 from agent import NO_GROUP
 
 BOX = 100                                                       # ARTICLE: bounds were [0, 100]
-GROUP_CENTRES = [(33, 33), (67, 33), (33, 67), (67, 67)]        # OUR OWN: meeting point of each group
+GROUP_CENTRES = [(33, 33), (67, 33), (33, 67), (67, 67)]        # meeting point of each group
 GROUP_NAMES = ["A", "B", "C", "D"]
 
 
 def randomPointNear(centre, radius):
-    # OUR OWN: random point inside a circle around the centre
+    # random point inside a circle around the centre
     angle = np.random.uniform(0, 2 * np.pi)
     r = radius * np.sqrt(np.random.uniform())
     return centre[0] + r * np.cos(angle), centre[1] + r * np.sin(angle)
@@ -45,14 +45,14 @@ def randomWalk(agent, stepSize):
 
 
 def currentTarget(agent):
-    # OUR OWN: the group the agent is hanging around (the one it is visiting, otherwise its home group)
+    # the group the agent is hanging around (the one it is visiting, otherwise its home group)
     if agent.visiting is not None:
         return agent.visiting
     return agent.group
 
 
 def moveAgent(agent, stepSize, travelChance, travelSpeed, leash, stayLength):
-    # OUR OWN: start a visit to another group now and then
+    # start a visit to another group now and then
     if agent.group != NO_GROUP and agent.visiting is None and np.random.uniform() < travelChance:
         others = [g for g in range(len(GROUP_CENTRES)) if g != agent.group]
         agent.visiting = int(np.random.choice(others))

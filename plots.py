@@ -5,7 +5,7 @@ Module: Agent-based simulation project (serial + parallel)
 
 Comment tags:
     ARTICLE:  from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1
-    OUR OWN:  added or changed by us. README reference numbers given where an idea is from research.
+    Comments without a tag are ours. README reference numbers are given where an idea is from research.
 
 File: plots.py
 Static plots saved after a run (used by headless mode and when the viewer closes).
@@ -13,7 +13,7 @@ Static plots saved after a run (used by headless mode and when the viewer closes
 import textwrap
 import numpy as np
 import matplotlib
-matplotlib.use("Agg")           # we only save pictures here, the live view is pygame
+matplotlib.use("Agg")           # we only save pictures here, the live view is a separate window
 import matplotlib.pyplot as plt
 from movement import GROUP_NAMES
 
@@ -23,7 +23,7 @@ GROUP_COLOURS = ["#f4a261", "#4361ee", "#9d4edd", "#8d6e63"]
 
 
 def plotCurve(counts, name, rumour):
-    # ARTICLE: infection curve. OUR OWN: one line per state.
+    # ARTICLE: infection curve. We draw one line per state.
     plt.figure()
     for k in range(4):
         plt.plot(counts[:, k], color=COLOURS[k], label=NAMES[k])
@@ -36,7 +36,7 @@ def plotCurve(counts, name, rumour):
 
 
 def plotGroupSpreaders(groupCounts, name):
-    # OUR OWN: spreaders over time for each home group. Shows how late the rumour reaches each group.
+    # spreaders over time for each home group. Shows how late the rumour reaches each group.
     plt.figure()
     plt.plot(groupCounts[:, 0], color="grey", linestyle=":", label="No group")
     for g in range(len(GROUP_NAMES)):
@@ -50,7 +50,7 @@ def plotGroupSpreaders(groupCounts, name):
 
 
 def plotTree(agents, name):
-    # OUR OWN: who told who. One row per hop from patient zero, a line from each agent to whoever told them.
+    # who told who. One row per hop from patient zero, a line from each agent to whoever told them.
     ever = [i for i in range(len(agents)) if agents[i].generation >= 0]
     if len(ever) == 0:
         return

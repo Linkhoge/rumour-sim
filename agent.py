@@ -5,18 +5,18 @@ Module: Agent-based simulation project (serial + parallel)
 
 Comment tags:
     ARTICLE:  from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1
-    OUR OWN:  added or changed by us. README reference numbers given where an idea is from research.
+    Comments without a tag are ours. README reference numbers are given where an idea is from research.
 
 File: agent.py
 """
 
 UNAWARE = 0     # ARTICLE: healthy
 SPREADER = 1    # ARTICLE: infected
-CORRECTOR = 2   # OUR OWN: passes on the correction (README refs 6, 7)
+CORRECTOR = 2   # passes on the correction (README refs 6, 7)
 STIFLER = 3     # ARTICLE: recovered. Name from Daley-Kendall (README ref 2)
 
 HOW_LONG = 50   # ARTICLE: infectedCounter was set to 50
-NO_GROUP = -1   # OUR OWN: agents who do not belong to any group
+NO_GROUP = -1   # agents who do not belong to any group
 
 
 class Agent():
@@ -27,22 +27,22 @@ class Agent():
         self.state = state                # ARTICLE: infected
         self.gullibility = gullibility    # ARTICLE: resistance (flipped, see simulation.py)
         self.counter = counter            # ARTICLE: infectedCounter
-        self.group = group                # OUR OWN: home group (0, 1, 2, 3) or NO_GROUP
-        self.visiting = None              # OUR OWN: group being visited right now (None = at home)
-        self.stay = 0                     # OUR OWN: steps left of the visit
-        # OUR OWN: who told who. -1 means nobody (the agent started with it, or never got it).
+        self.group = group                # home group (0, 1, 2, 3) or NO_GROUP
+        self.visiting = None              # group being visited right now (None = at home)
+        self.stay = 0                     # steps left of the visit
+        # who told who. -1 means nobody (the agent started with it, or never got it).
         self.infector = -1                # agent number who gave this agent the RUMOUR
         self.generation = -1              # hops from patient zero (0 = started with it, -1 = never had it)
         self.corrSource = -1              # agent number who gave this agent the CORRECTION
         self.corrGeneration = -1          # hops from the first corrector
         self.changedAt = -2               # step when the state last changed (used to draw new hops)
-        self.interest = interest          # OUR OWN: how much they care about gossip (0 = not at all, 1 = loves it)
-        self.isSubject = False            # OUR OWN: the rumour is ABOUT this agent
-        self.ignored = False              # OUR OWN: heard the rumour but chose not to pass it on
-        self.heardAt = None               # OUR OWN: step they first heard the rumour (None = never)
+        self.interest = interest          # how much they care about gossip (0 = not at all, 1 = loves it)
+        self.isSubject = False            # the rumour is ABOUT this agent
+        self.ignored = False              # heard the rumour but chose not to pass it on
+        self.heardAt = None               # step they first heard the rumour (None = never)
 
     def becomeSpreader(self, source=-1, generation=0, t=-1):
-        # ARTICLE: infect() sets infected and the counter. OUR OWN: also remember who told us.
+        # ARTICLE: infect() sets infected and the counter. We also remember who told us.
         self.state = SPREADER
         self.counter = HOW_LONG
         self.infector = source
@@ -52,7 +52,7 @@ class Agent():
             self.heardAt = t
 
     def becomeIgnorer(self, source, generation, t):
-        # OUR OWN: heard the rumour but does not believe it or does not care, so never passes it on.
+        # Heard the rumour but does not believe it or does not care, so never passes it on.
         # They stay in the simulation as a stifler. We still record who told them (to draw the arrow).
         self.state = STIFLER
         self.counter = 0
@@ -64,7 +64,7 @@ class Agent():
             self.heardAt = t
 
     def becomeSubjectCorrector(self, source, generation, t):
-        # OUR OWN: the subject hears the rumour about themselves and denies it. They are the FIRST corrector
+        # The subject hears the rumour about themselves and denies it. They are the FIRST corrector
         # (corrSource -1, hop 0). We still record who told them the rumour (infector, generation).
         self.state = CORRECTOR
         self.counter = HOW_LONG
@@ -77,7 +77,7 @@ class Agent():
             self.heardAt = t
 
     def becomeCorrector(self, source=-1, generation=0, t=-1):
-        # OUR OWN: same for the correction (kept separate so the rumour tree stays clean)
+        # same for the correction (kept separate so the rumour tree stays clean)
         self.state = CORRECTOR
         self.counter = HOW_LONG
         self.corrSource = source
@@ -85,7 +85,7 @@ class Agent():
         self.changedAt = t
 
     def tick(self):
-        # ARTICLE: counter ticks down, agent recovers at 0. OUR OWN: also for correctors.
+        # ARTICLE: counter ticks down, agent recovers at 0. We do the same for correctors.
         if self.state == SPREADER or self.state == CORRECTOR:
             self.counter -= 1
             if self.counter <= 0:
