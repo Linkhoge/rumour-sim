@@ -3,12 +3,11 @@ Team Char Siu
 Members: Ariel Fajimiyo (more names to be added)
 Module: Agent-based simulation project (serial + parallel)
 
-Comment tags:
-    ARTICLE:  from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1
-    Comments without a tag are ours. README reference numbers are given where an idea is from research.
+ARTICLE: marks things taken from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1.
+Comments without a tag are ours.
 
 File: simulation.py
-Setting up agents, spreading rule, one simulation step, main loop. Movement is in movement.py.
+Setting up agents, the spread rule, one step, and the main loop. Movement is in movement.py.
 """
 import numpy as np
 from scipy.spatial import distance_matrix      # ARTICLE: same distance matrix function
@@ -18,9 +17,9 @@ from movement import GROUP_CENTRES, randomPointNear, randomPointInBox, moveAgent
 
 def makeAgents(n, seed, noGroupFraction, leash):
     # ARTICLE: loop that makes agents with random x, y.
-    # Most agents belong to a group (shared out evenly) and start near its meeting point.
-    # Some agents belong to no group and start anywhere in the box.
-    # The seed is set here, so one seed decides the whole run (setup and every step after it).
+    # most agents get a group (shared out evenly) and start near its meeting point,
+    # the rest have no group and start anywhere in the box.
+    # the seed is set here so one seed decides the whole run
     np.random.seed(seed)
     agents = []
     for i in range(n):
@@ -35,8 +34,8 @@ def makeAgents(n, seed, noGroupFraction, leash):
 
 
 def seedSpreaders(agents, howMany, group):
-    # ARTICLE: seed a few infected agents. Ours all come from ONE group so we can watch it reach the others.
-    # With howMany = 1 this is "patient zero".
+    # ARTICLE: seed a few infected agents. ours all come from one group so we can watch it reach the others.
+    # howMany = 1 is patient zero
     inGroup = [i for i in range(len(agents)) if agents[i].group == group]
     for i in np.random.choice(inGroup, howMany, replace=False):
         agents[i].becomeSpreader()
@@ -44,9 +43,8 @@ def seedSpreaders(agents, howMany, group):
 
 
 def pickSubject(agents, group):
-    # The rumour is ABOUT one agent (the subject). They are an ordinary member of the chosen group
-    # (pick a different group to patient zero) and are not patient zero. Nobody tells them first,
-    # they find out like anyone else.
+    # the rumour is about one agent (the subject). pick a group other than patient zero's.
+    # they aren't told first, they find out like everyone else
     options = [i for i in range(len(agents)) if agents[i].group == group and agents[i].state == UNAWARE]
     i = int(np.random.choice(options))
     agents[i].isSubject = True
@@ -77,7 +75,7 @@ def getState(agents):
 
 
 def pickSource(closeRow, old, wanted):
-    # if several nearby agents could have passed it on, pick one of them at random
+    # if a few nearby agents could have told them, pick one at random
     options = np.where(closeRow & (old == wanted))[0]
     if len(options) == 0:
         return -1
@@ -85,24 +83,23 @@ def pickSource(closeRow, old, wanted):
 
 
 def rollSpread(agents, t, contactRadius, rumourStrength, correctionStrength, minInterest=1.0, subjectDenies=1.0):
-    # ARTICLE: rollInfect. Distance matrix, then agents within a set distance can pass it on,
-    #   with a random roll against resistance (infected if roll > resistance).
-    # Changes from the article:
-    #   - roll < gullibility (same idea flipped), and two competing messages (rumour and correction).
-    #   - decisions use the OLD states and are applied at the end, so the order of agents does not matter
-    #     (the article changes agents while looping, which depends on the order).
-    #   - we record WHO passed it on, so we can draw who told who.
-    #   - hearing it is not the same as passing it on. Someone who hears the rumour passes it on with chance
-    #     minInterest + (1 - minInterest) * their interest. Otherwise they do not believe it or do not care:
-    #     they become a stifler at once and stay in the simulation.
-    #   - the subject, when they hear it, denies it (becomes a corrector).
+    # ARTICLE: rollInfect. distance matrix, anyone within a set distance can pass it on,
+    #   random roll against resistance.
+    # what we changed:
+    #   - roll < gullibility (same idea flipped), and there are two messages (rumour + correction)
+    #   - everyone decides from the OLD states, then the changes are applied at the end, so the
+    #     order of agents doesn't matter (the article updates while looping so it does)
+    #   - we record who passed it on so we can draw who told who
+    #   - hearing it isn't the same as passing it on. if you hear it you pass it on with chance
+    #     minInterest + (1 - minInterest) * interest, otherwise you become a stifler straight away
+    #   - the subject denies it when they hear it (becomes a corrector)
     positions = getPosition(agents)
     dist = distance_matrix(positions, positions)
     close = dist < contactRadius
-    np.fill_diagonal(close, False)                 # an agent is not in contact with itself
+    np.fill_diagonal(close, False)                 # agent isn't in contact with itself
 
     old = np.array(getState(agents))
-    oldGen = [a.generation for a in agents]        # copies, so applying changes cannot affect each other
+    oldGen = [a.generation for a in agents]        # copies so applying changes can't affect each other
     oldCorrGen = [a.corrGeneration for a in agents]
     nr = close[:, old == SPREADER].sum(axis=1)     # spreaders each agent is in contact with
     nc = close[:, old == CORRECTOR].sum(axis=1)    # correctors each agent is in contact with
@@ -110,11 +107,11 @@ def rollSpread(agents, t, contactRadius, rumourStrength, correctionStrength, min
     newStates = list(old)
     rumourFrom = [-1] * len(agents)
     correctFrom = [-1] * len(agents)
-    how = ["correct"] * len(agents)               # why the state changed (spread, ignore, subject, correct)
+    how = ["correct"] * len(agents)               # why the state changed: spread, ignore, subject or correct
     for i in range(len(agents)):
         g = agents[i].gullibility
         pRumour = 1 - (1 - g * rumourStrength) ** nr[i]                    # more contacts, more chances
-        pCorrect = 1 - (1 - (1 - g) * correctionStrength) ** nc[i]         # less gullible = more likely to believe it
+        pCorrect = 1 - (1 - (1 - g) * correctionStrength) ** nc[i]         # less gullible = more likely to believe the correction
         if old[i] == UNAWARE:
             gotRumour = np.random.uniform() < pRumour
             gotCorrect = np.random.uniform() < pCorrect
@@ -164,14 +161,14 @@ def rollSpread(agents, t, contactRadius, rumourStrength, correctionStrength, min
 
 
 def tickAgents(agents):
-    # ARTICLE: the counter countdown inside movement(). Separate function here.
+    # ARTICLE: the counter countdown from movement(), separate function here
     for agent in agents:
         agent.tick()
     return agents
 
 
 def stepSimulation(agents, t, p):
-    # ONE time step. The viewer and the headless run both call this, so they always match.
+    # one time step. the viewer and headless both call this so they always match
     agents = moveAgents(agents, p["stepSize"], p["travelChance"], p["travelSpeed"], p["leash"], p["stayLength"])
     agents = tickAgents(agents)
     agents = rollSpread(agents, t, p["contactRadius"], p["rumourStrength"], p["correctionStrength"],
@@ -188,7 +185,7 @@ def countStates(agents):
 
 
 def countSpreadersByGroup(agents):
-    # spreaders per home group. Index 0 = no group, then groups A, B, C, D.
+    # spreaders per home group. index 0 = no group, then A to D
     counts = [0] * (len(GROUP_CENTRES) + 1)
     for a in agents:
         if a.state == SPREADER:
@@ -205,7 +202,7 @@ def transmissionStats(agents):
             children[a.infector] = children.get(a.infector, 0) + 1
     best = max(children, key=children.get) if children else -1
     maxGen = max([agents[i].generation for i in ever]) if ever else 0
-    sizes = [0] * (maxGen + 1)                       # how many agents were in each hop from patient zero
+    sizes = [0] * (maxGen + 1)                       # agents per hop from patient zero
     for i in ever:
         sizes[agents[i].generation] += 1
     subject = [a for a in agents if a.isSubject]
@@ -223,15 +220,15 @@ def transmissionStats(agents):
         "passedOnToNobody": len([i for i in ever if i not in children]),
         "mostPassedOn": children[best] if best >= 0 else 0,
         "biggestSpreader": best,
-        "ignoredIt": len([a for a in agents if a.ignored]),       # heard it, did not pass it on
-        "subjectHeardAtStep": subjectHeardAt,                     # None = the subject never found out
+        "ignoredIt": len([a for a in agents if a.ignored]),       # heard it, didn't pass it on
+        "subjectHeardAtStep": subjectHeardAt,                     # None = never found out
         "subjectHops": subjectHops,                               # hops from patient zero to the subject
-        "heardBeforeSubject": heardBeforeSubject,                 # how many had heard it when the subject did
+        "heardBeforeSubject": heardBeforeSubject,                 # how many had heard it by then
     }
 
 
 def runSimulation(agents, steps, p):
-    # ARTICLE: final loop (move, roll infect, record infected count). No drawing, used for headless runs.
+    # ARTICLE: final loop (move, roll infect, record counts). no drawing, used for headless runs
     counts = []
     groupCounts = []
     for t in range(steps):

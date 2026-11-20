@@ -1,59 +1,79 @@
 # Notes - Team Char Siu
 
-## Model
-- 500 agents in one 100x100 box. 4 groups (A-D), each with a meeting point. About 20% of agents have no group.
-- States: Unaware, Spreader, Corrector, Stifler.
-- Each step (`stepSimulation`): move, tick counters, spread, maybe seed correctors.
-- Movement (`movement.py`):
-  - Grouped agent: random walk, kept within `leash` of its group's meeting point.
-  - No-group agent: random walk anywhere in the box.
-  - Each step a grouped agent starts a visit to another group with `travelChance`. It walks there at `travelSpeed`,
-    stays `stayLength` steps, then walks home.
-- Spread: distance matrix (article). Contact if distance < `contactRadius`. Contact is between any agents, so
-  groups mix where circles overlap, through visitors, and through no-group agents.
-  - P(rumour) = 1 - (1 - g * rumourStrength)^nSpreaderContacts
-  - P(correct) = 1 - (1 - (1 - g) * correctionStrength)^nCorrectorContacts
-  - g = gullibility. Both in one step: coin flip. Spreaders can switch to corrector.
-- Spreaders/correctors become stiflers after 50 steps.
-- Rumour starts in group A (5 spreaders). Correction starts at step 60 with 5 agents.
-- Updates use old states, applied at the end (order independent).
+## How the model works
+- 500 agents by default (--n changes it) in one 100x100 box. 4 groups (A to D), each with a meeting point.
+  About 20% of agents have no group.
+- States: unaware, spreader, corrector, stifler.
+- One step (stepSimulation): move, tick the timers, spread, maybe add correctors.
+- Movement (movement.py):
+  - group member: random walk, kept within `leash` of the meeting point
+  - no group: random walk anywhere in the box
+  - each step a group member has a `travelChance` of visiting another group. They walk there at
+    `travelSpeed`, stay `stayLength` steps, then walk home
+- The rumour is about one agent, the subject, who is in group D. Patient zero is one agent in group A.
+- Spread uses a distance matrix like the article. Two agents are in contact if they are closer than
+  `contactRadius`. Contact is between any agents, so groups mix where the circles overlap, through
+  visitors, and through no-group agents.
+  - P(rumour) = 1 - (1 - g * rumourStrength)^(spreaders in contact)
+  - P(correct) = 1 - (1 - (1 - g) * correctionStrength)^(correctors in contact)
+  - g = gullibility. If both happen in one step it's a coin flip. Spreaders can switch to corrector.
+- Hearing the rumour isn't the same as passing it on. Each agent has an interest (0 to 1). If they hear
+  it they pass it on with chance minInterest + (1 - minInterest) * interest, otherwise they go straight
+  to stifler. They stay in the sim, they just don't spread it.
+- When the subject hears it they deny it and become the first corrector, so the correction only starts
+  once the rumour has reached them.
+- Spreaders and correctors become stiflers after 50 steps.
+- Everyone decides from the old states and the changes are applied at the end, so the order of agents
+  doesn't matter.
 
 ## Article vs ours
 | Article | Ours |
 |---|---|
-| Everyone random in one box | Groups with meeting points, no-group agents, visits between groups |
-| Saved GIF | Live matplotlib window (`FuncAnimation`), `--headless` for benchmarks |
-| Infected / healthy | 4 states |
+| everyone random in one box | groups with meeting points, no-group agents, visits between groups |
+| saved GIF | live window, `--headless` for benchmarks |
+| infected / healthy | 4 states |
 | roll > resistance | roll < gullibility |
-| In-place update | Old state read, new state written |
+| updates in place | read old state, write new state |
+| one disease | rumour about a subject + a correction |
+
+## Seeds
+One seed decides the whole run (np.random.seed in makeAgents). Default is 42. Same seed + n + settings
+gives the same run. For serial and parallel to match exactly we'll need random numbers from
+(seed, step, agent) instead, see todo 1.
 
 ## Settings
-`rumourStrength`, `correctionStrength`, `travelChance`, `leash` found by trial and error, not from data.
-Seed 42 defaults: rumour reaches B, C, D around step 40-60.
+`rumourStrength`, `correctionStrength`, `travelChance`, `leash` and `minInterest` were found by trial and
+error, not from data. `contactRadius` is scaled with n so agents meet about the same number of people at
+any n. In our test runs (500 agents, 250 steps) the rumour reached roughly 250 to 360 agents and the
+subject heard it around step 90 to 120.
 
 ## Todo
-1. Replace `np.random` with RNG from (seed, step, agent) so serial and parallel match.
-2. Convert Agent objects to NumPy arrays (Numba cannot use objects).
-3. Replace the O(n^2) distance matrix with a grid / cell list. Needed for large n.
+1. Random numbers from (seed, step, agent) instead of np.random so serial and parallel match.
+2. Agent objects to numpy arrays (Numba can't use objects).
+3. Replace the O(n^2) distance matrix with a grid / cell list. The matrix is about 200 MB at 5,000
+   agents and about 3 GB at 20,000, so we need this for big n.
 4. Numba `prange` version.
 5. Equivalence test: same seed, serial output == parallel output.
-6. Benchmarks (headless only): n in {1k, 10k, 100k}, workers in {1, 2, 4, 8}. Time, speed-up S = Ts/Tp, efficiency E = S/p.
-7. Experiments: vary travelChance, noGroupFraction, correctionStart, correctionStrength.
+6. Benchmarks (headless only): n in {1k, 10k, 100k}, workers in {1, 2, 4, 8}. Time, speed-up S = Ts/Tp,
+   efficiency E = S/p.
+7. Experiments: vary travelChance, noGroupFraction, minInterest, subjectDenies.
 8. Report, viva prep.
 
 ## Parallel plan
-- Movement and spread: each agent reads old state and writes only its own slot. Safe to split by agent.
-- Distance matrix is the bottleneck. Cell list takes it from O(n^2) to roughly O(n).
-- Groups make agents cluster, so work per cell is uneven. Measure load imbalance.
+- Movement and spread: each agent reads old state and only writes its own slot, so it's safe to split
+  by agent.
+- The distance matrix is the bottleneck. A cell list takes it from O(n^2) to roughly O(n).
+- Groups make agents cluster, so the work per cell is uneven. Measure the load imbalance.
 - Never benchmark with the live window. Use `--headless`.
 - Expect poor speed-up for small n. Report it.
 
-## Optional later
-Rumour text mutation via a transmission log and a separate post-processing module, outside the simulation loop.
+## Maybe later
+Rumour text mutation using a transmission log and a separate post-processing module, outside the
+simulation loop.
 
 ## Questions for Joseph
-1. Rumour spread acceptable instead of disease?
-2. Any limits on language/libraries? (Python + Numba planned)
-3. Is a live window enough for "graphic output", or do we also need a saved image/video?
+1. Is a rumour acceptable instead of a disease?
+2. Any limits on language or libraries? (Python + Numba planned)
+3. Is a live window enough for the graphic output, or do we also need a saved image/video?
 4. Target population size?
-5. Shared-memory parallelism enough?
+5. Is shared-memory parallelism enough?

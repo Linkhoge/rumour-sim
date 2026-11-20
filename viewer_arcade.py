@@ -3,26 +3,25 @@ Team Char Siu
 Members: Ariel Fajimiyo (more names to be added)
 Module: Agent-based simulation project (serial + parallel)
 
-Comment tags:
-    ARTICLE:  from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1
-    OUR OWN:  added or changed by us. README reference numbers given where an idea is from research.
+ARTICLE: marks things taken from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1.
+Comments without a tag are ours.
 
 File: viewer_arcade.py
-Live window made with the Arcade library (draws with the GPU through OpenGL). It only draws: it calls
-stepSimulation() from simulation.py and reads the agents, so the model is not changed by the viewer.
+The live window, made with Arcade. It only draws things. It calls stepSimulation() and reads the
+agents, so it doesn't change the model.
 
-How to follow who told who:
-    - People with the rumour are big, bright and have a soft glow. Everyone else is small and dim.
-    - Every time someone passes it on, an ARROW is drawn from the teller to the new person and a ring pulses
-      on the new person. Arrows stay for about 5 seconds (or forever with T = tree mode).
-    - The gold path always shows the chain from patient zero to the most recent person to catch it
-      (numbers = hop number). Click any agent to trace their chain instead (white).
-    - Hover over an agent for a popup with its details.
-    - The "latest passes" list on the right names the agents (#id -> #id).
+Following who told who:
+    - spreaders and correctors are big and bright with a glow, everyone else is small and dim
+    - when someone passes it on there's an arrow from the teller to the new person and a ring pulses
+      on them. arrows fade after about 5 seconds (T keeps them)
+    - the gold path is the chain from patient zero to the newest person to catch it (numbers are hops).
+      click an agent to trace theirs instead (white)
+    - hover over an agent to see its details
+    - the list on the right names the agents (#id -> #id)
 
 Controls:
-    SPACE pause   UP / DOWN speed   R restart   ESC or Q quit
-    T keep all arrows (tree)   G colour by hop   F follow newest on/off   H group rings on/off
+    SPACE pause   UP/DOWN speed   R replay   ESC or Q quit
+    T keep arrows   G colour by hop   F follow newest on/off   H group rings on/off
     CLICK an agent to trace who told them
 """
 import math
@@ -36,18 +35,18 @@ SIM = 700                       # size of the square drawing area in pixels
 SIDE = 440                      # width of the side panel
 SCALE = SIM / BOX               # pixels per unit
 TICKS_PER_SECOND = 30           # model steps per second at 1x speed
-SMOOTH_RATE = 14                # higher = drawn positions catch up with real ones faster (lower = smoother)
-ARROW_LIFE = 5.0                # seconds an arrow stays visible (unless tree mode)
-PULSE_LIFE = 1.0                # seconds the "new person" ring pulses for
+SMOOTH_RATE = 14                # higher = drawn positions catch up faster, lower = smoother
+ARROW_LIFE = 5.0                # seconds an arrow stays (unless T)
+PULSE_LIFE = 1.0                # seconds the ring on a new person pulses
 FONT = ("Consolas", "Menlo", "DejaVu Sans Mono", "Courier New")
 
-# look of the agents (change these to taste)
-GLOW_RADIUS = 11                # pixels. Size of the soft glow around spreaders and correctors
-GLOW_ALPHA = 120                # 0 to 255. Strength of the glow (lower = fainter)
-DOT_ACTIVE = 5                  # radius in pixels of a spreader or corrector
-DOT_IDLE = 2.5                  # radius in pixels of everyone else
-DOT_HOP = 4                     # radius in pixels when colouring by hop (G)
-PULSE_SIZE = 18                 # how far the "new person" ring expands (pixels)
+# how the agents look, change these if you want
+GLOW_RADIUS = 11                # size of the glow around spreaders and correctors
+GLOW_ALPHA = 120                # 0 to 255, how strong the glow is
+DOT_ACTIVE = 5                  # radius of a spreader or corrector
+DOT_IDLE = 2.5                  # radius of everyone else
+DOT_HOP = 4                     # radius when colouring by hop (G)
+PULSE_SIZE = 18                 # how far the ring on a new person grows
 
 BG = (11, 16, 32)
 PANEL = (17, 24, 46)
@@ -55,10 +54,13 @@ TEXT = (210, 218, 235)
 DIM = (120, 130, 155)
 GOLD = (255, 214, 10)
 WHITE = (255, 255, 255)
-# unaware and stiflers are dim on purpose, so the people spreading it stand out
+IGNORED_COL = (150, 160, 185)   # arrow to someone who heard it but didn't pass it on
+SUBJECT_COL = (255, 105, 180)   # ring around the subject
+# unaware and stiflers are dim on purpose so the spreaders stand out
 STATE_COL = [(58, 66, 92), (255, 77, 77), (46, 214, 170), (78, 92, 128)]       # unaware, spreader, corrector, stifler
 LINE_COL = [(130, 145, 180), (255, 77, 77), (46, 214, 170), (130, 145, 180)]   # brighter versions for the panel
 STATE_NAMES = ["Unaware", "Spreader", "Corrector", "Stifler"]
+STATE_HELP = ["hasn't heard it", "telling others", "spreading the correction", "heard it, stopped passing it on"]
 GROUP_COL = [(244, 162, 97), (67, 97, 238), (157, 78, 221), (141, 110, 99)]
 GEN_COL = [(255, 214, 10), (255, 159, 10), (255, 99, 71), (236, 72, 153),
            (168, 85, 247), (99, 102, 241), (56, 189, 248), (45, 212, 191)]     # hop 0, 1, 2, ...
@@ -93,7 +95,7 @@ def drawArrow(p1, p2, col, width):
 
 
 def traceChain(agents, idx):
-    # follow the "told by" links back to patient zero. Returns [patient zero, ..., idx]
+    # follow the told-by links back to patient zero. returns [patient zero, ..., idx]
     chain, guard = [], 0
     while idx >= 0 and guard < 500:
         chain.append(idx)
@@ -103,16 +105,20 @@ def traceChain(agents, idx):
 
 
 def describe(agents, i):
-    # lines of text about one agent (used by the hover popup and the side panel)
+    # lines of text about one agent (hover popup and side panel)
     a = agents[i]
     grp = "no group" if a.group == NO_GROUP else "group " + GROUP_NAMES[a.group]
     lines = ["#" + str(i) + "  " + STATE_NAMES[a.state] + ", " + grp]
+    if a.isSubject:
+        lines.append("the rumour is about this agent")
     if a.generation >= 0:
         lines.append("hop " + str(a.generation) + (", started it" if a.infector < 0 else ", told by #" + str(a.infector)))
+        if a.ignored:
+            lines.append("heard it but didn't pass it on")
     else:
         lines.append("has not had the rumour")
     if a.corrGeneration >= 0:
-        lines.append("heard the correction" + ("" if a.corrSource < 0 else " from #" + str(a.corrSource)))
+        lines.append("started the correction" if a.corrSource < 0 else "heard the correction from #" + str(a.corrSource))
     return lines
 
 
@@ -124,8 +130,8 @@ class RumourWindow(arcade.Window):
         self.steps = steps
         self.p = p
         self.rumour = rumour
-        self.texts = {}                 # Text objects, made once and re-used (much faster than draw_text)
-        self.speedIdx = 1               # start slow (0.5x) so it is easy to follow
+        self.texts = {}                 # Text objects, made once and reused (much faster than draw_text)
+        self.speedIdx = 1               # start slow (0.5x) so it's easy to follow
         self.paused = False
         self.treeMode = False
         self.genMode = False
@@ -138,17 +144,17 @@ class RumourWindow(arcade.Window):
     def newRun(self):
         self.agents = self.build()
         n = len(self.agents)
-        self.zeros = [i for i in range(n) if self.agents[i].state == SPREADER]    # patient zero(s)
+        self.zeros = [i for i in range(n) if self.agents[i].state == SPREADER]    # patient zero
         self.shown = self.realPositions()
         self.history = []
-        self.arrows = []                # [x1, y1, x2, y2, born time, colour]  (pixel positions)
+        self.arrows = []                # [x1, y1, x2, y2, born time, colour] in pixels
         self.pulses = []                # [agent index, born time, colour]
         self.log = []                   # latest passes: (step, from, to, hop, kind)
         self.latest = -1                # most recent agent to catch the rumour
         self.t = 0
         self.acc = 0.0
         self.selected = None
-        # sprites: one soft glow and one dot per agent. Glow is drawn with additive blending.
+        # one glow and one dot sprite per agent. the glow is drawn additive
         self.glowList = arcade.SpriteList()
         self.dotList = arcade.SpriteList()
         self.glows, self.dots = [], []
@@ -159,7 +165,7 @@ class RumourWindow(arcade.Window):
             g.color = (255, 255, 255, 0)
             self.glowList.append(g)
             self.glows.append(g)
-            if a.group == NO_GROUP:                       # no group: diamond (a square turned 45 degrees)
+            if a.group == NO_GROUP:                       # no group: diamond (square turned 45 degrees)
                 dot = arcade.SpriteSolidColor(10, 10, color=(255, 255, 255, 255))
                 dot.angle = 45
             else:
@@ -225,15 +231,18 @@ class RumourWindow(arcade.Window):
                 for i in range(len(self.agents)):
                     a = self.agents[i]
                     if a.changedAt == self.t:             # state changed this step: someone told them
-                        if a.state == SPREADER and a.infector >= 0:
-                            events.append((a.infector, i, STATE_COL[SPREADER], "rumour", a.generation, self.t))
-                            self.latest = i
+                        if a.heardAt == self.t and a.infector >= 0:       # heard the rumour this step
+                            kind = "ignored" if a.ignored else "rumour"
+                            col = IGNORED_COL if a.ignored else STATE_COL[SPREADER]
+                            events.append((a.infector, i, col, kind, a.generation, self.t))
+                            if not a.ignored:
+                                self.latest = i
                         elif a.state == CORRECTOR and a.corrSource >= 0:
                             events.append((a.corrSource, i, STATE_COL[CORRECTOR], "correction", a.corrGeneration, self.t))
                 self.history.append(countStates(self.agents))
                 self.t += 1
 
-        # drawn positions ease towards the real ones (this is what removes the jitter)
+        # drawn positions ease towards the real ones, this is what stops the jitter
         k = 1 - math.exp(-dt * SMOOTH_RATE)
         self.shown += (self.realPositions() - self.shown) * k
 
@@ -248,7 +257,7 @@ class RumourWindow(arcade.Window):
         self.pulses = [q for q in self.pulses if self.now - q[1] < PULSE_LIFE]
         self.log = self.log[-60:]
 
-        # sprites: position every frame, colour/size only when they change
+        # sprites: position every frame, colour and size only when they change
         for i in range(len(self.agents)):
             a = self.agents[i]
             sx, sy = self.toScreen(self.shown[i])
@@ -275,7 +284,7 @@ class RumourWindow(arcade.Window):
 
     # ---------------- drawing ----------------
     def label(self, key, msg, x, ytop, col=TEXT, size=11, bold=False):
-        # ytop = distance from the top of the window (easier for laying out the panel)
+        # ytop = distance from the top of the window, easier for laying out the panel
         y = SIM - ytop
         t = self.texts.get(key)
         if t is None:
@@ -293,18 +302,18 @@ class RumourWindow(arcade.Window):
         self.clear()
         p = self.p
         rad = p["leash"] * SCALE
-        for k in range(len(GROUP_CENTRES)):                   # group areas (faint)
+        for k in range(len(GROUP_CENTRES)):                   # group areas, faint
             cx, cy = GROUP_CENTRES[k][0] * SCALE, GROUP_CENTRES[k][1] * SCALE
             arcade.draw_circle_filled(cx, cy, rad, rgba(GROUP_COL[k], 20))
             arcade.draw_circle_outline(cx, cy, rad, rgba(GROUP_COL[k], 90), 1)
 
         self.glowList.draw(blend_function=self.ctx.BLEND_PREMULTIPLIED_ALPHA)   # soft glow, additive
 
-        for h in self.arrows:                                 # arrows: teller -> new person
+        for h in self.arrows:                                 # arrows from teller to new person
             age = self.now - h[4]
             alpha = max(90 if self.treeMode else 0, int(255 * (1 - age / ARROW_LIFE)))
             drawArrow((h[0], h[1]), (h[2], h[3]), rgba(h[5], alpha), 3)
-        for q in self.pulses:                                 # expanding ring that follows the new person
+        for q in self.pulses:                                 # ring that follows the new person
             age = self.now - q[1]
             x, y = self.toScreen(self.shown[q[0]])
             arcade.draw_circle_outline(x, y, 5 + PULSE_SIZE * age / PULSE_LIFE,
@@ -319,7 +328,7 @@ class RumourWindow(arcade.Window):
                     arcade.draw_circle_outline(x, y, self.dotStyle[i][1] + 2 if self.dotStyle[i] else 5,
                                                GROUP_COL[self.agents[i].group], 1)
 
-        # gold path: patient zero -> ... -> newest person (white if you clicked an agent)
+        # gold path from patient zero to the newest person (white if you clicked an agent)
         target = self.selected if self.selected is not None else (self.latest if self.follow else -1)
         if target >= 0:
             chain = traceChain(self.agents, target)
@@ -333,10 +342,16 @@ class RumourWindow(arcade.Window):
                     self.label("hop" + str(k), str(self.agents[chain[k]].generation),
                                pts[k][0] + 8, SIM - pts[k][1] - 4, col, 10)
 
-        for n, z in enumerate(self.zeros):                    # patient zero marker with a label above it
+        for n, z in enumerate(self.zeros):                    # patient zero marker
             x, y = self.toScreen(self.shown[z])
             arcade.draw_circle_outline(x, y, 12 + 3 * math.sin(self.now * 4.5), WHITE, 2)
             self.label("p0_" + str(n), "PATIENT 0" if len(self.zeros) == 1 else "P0", x - 4, SIM - y - 18, WHITE, 10, True)
+
+        for i in range(len(self.agents)):                     # subject marker
+            if self.agents[i].isSubject:
+                x, y = self.toScreen(self.shown[i])
+                arcade.draw_circle_outline(x, y, 14, SUBJECT_COL, 2)
+                self.label("subject", "SUBJECT", x - 4, SIM - y - 20, SUBJECT_COL, 10, True)
 
         for k in range(len(GROUP_CENTRES)):                   # group names
             cx, cy = GROUP_CENTRES[k][0] * SCALE, GROUP_CENTRES[k][1] * SCALE
@@ -374,13 +389,13 @@ class RumourWindow(arcade.Window):
         y += 4
         finished = self.t >= self.steps
         self.label("step", "step " + str(self.t) + " / " + str(self.steps) + "   " + str(SPEEDS[self.speedIdx]) + "x"
-                   + ("   PAUSED" if self.paused else "") + ("   FINISHED (R restarts)" if finished else ""), x0, y)
+                   + ("   PAUSED" if self.paused else "") + ("   FINISHED (R replays)" if finished else ""), x0, y)
         y += 22
         counts = countStates(self.agents)
         stats = transmissionStats(self.agents)
         for k in range(4):
             arcade.draw_circle_filled(x0 + 6, SIM - (y + 8), 5, LINE_COL[k])
-            self.label("count" + str(k), STATE_NAMES[k] + ": " + str(counts[k]), x0 + 20, y)
+            self.label("count" + str(k), STATE_NAMES[k] + ": " + str(counts[k]) + "  (" + STATE_HELP[k] + ")", x0 + 20, y)
             y += 18
         self.label("stats", "had the rumour: " + str(stats["everHadRumour"]) + "   hops from patient 0: "
                    + str(stats["maxGeneration"]), x0, y, DIM, 10)
@@ -414,9 +429,10 @@ class RumourWindow(arcade.Window):
         self.label("logTitle", "latest passes (teller -> new person)", x0, y, DIM, 10)
         y += 16
         for k, entry in enumerate(self.log[::-1][:8]):
-            col = LINE_COL[SPREADER] if entry[4] == "rumour" else LINE_COL[CORRECTOR]
+            col = LINE_COL[SPREADER] if entry[4] == "rumour" else LINE_COL[CORRECTOR] if entry[4] == "correction" else DIM
             self.label("log" + str(k), "t" + str(entry[0]) + "  #" + str(entry[1]) + " -> #" + str(entry[2])
-                       + "   hop " + str(entry[3]) + ("  (correction)" if entry[4] == "correction" else ""),
+                       + "   hop " + str(entry[3])
+                       + ("  (correction)" if entry[4] == "correction" else "  (ignored it)" if entry[4] == "ignored" else ""),
                        x0, y, col, 10)
             y += 14
         y += 10
@@ -431,12 +447,12 @@ class RumourWindow(arcade.Window):
 
         flags = ("T arrows: " + ("keep" if self.treeMode else "fade") + "   G hop colours: " + ("on" if self.genMode else "off")
                  + "   F follow: " + ("on" if self.follow else "off") + "   H rings: " + ("on" if self.rings else "off"))
-        self.label("help1", "SPACE pause  UP/DOWN speed  R restart  ESC quit", x0, SIM - 38, DIM, 10)
+        self.label("help1", "SPACE pause  UP/DOWN speed  R replay  ESC quit", x0, SIM - 38, DIM, 10)
         self.label("help2", flags, x0, SIM - 22, DIM, 10)
 
 
 def runViewer(build, steps, p, rumour):
-    """build() must return a fresh list of agents (used at start and when R is pressed)."""
+    # build() gives a fresh list of agents (used at the start and when R is pressed)
     window = RumourWindow(build, steps, p, rumour)
     arcade.run()
     return window.agents, window.history

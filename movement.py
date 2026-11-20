@@ -3,13 +3,12 @@ Team Char Siu
 Members: Ariel Fajimiyo (more names to be added)
 Module: Agent-based simulation project (serial + parallel)
 
-Comment tags:
-    ARTICLE:  from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1
-    Comments without a tag are ours. README reference numbers are given where an idea is from research.
+ARTICLE: marks things taken from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1.
+Comments without a tag are ours.
 
 File: movement.py
-All movement logic lives here. Everyone shares one box (no walls). Each group hangs around a meeting
-point, agents with no group wander freely, and group members sometimes visit another group then go home.
+All the movement is here. Everyone shares one box with no walls. Each group hangs around a meeting
+point, agents with no group wander, and group members sometimes visit another group then go home.
 """
 import numpy as np
 from agent import NO_GROUP
@@ -32,7 +31,7 @@ def randomPointInBox():
 
 
 def clampToBox(agent):
-    # ARTICLE: boundary check (set the agent on the boundary if it goes past it)
+    # ARTICLE: boundary check, put the agent on the edge if it goes past
     agent.x = min(max(agent.x, 0), BOX)
     agent.y = min(max(agent.y, 0), BOX)
 
@@ -45,14 +44,14 @@ def randomWalk(agent, stepSize):
 
 
 def currentTarget(agent):
-    # the group the agent is hanging around (the one it is visiting, otherwise its home group)
+    # the group they're hanging around: the one they're visiting, otherwise home
     if agent.visiting is not None:
         return agent.visiting
     return agent.group
 
 
 def moveAgent(agent, stepSize, travelChance, travelSpeed, leash, stayLength):
-    # start a visit to another group now and then
+    # now and then start a visit to another group
     if agent.group != NO_GROUP and agent.visiting is None and np.random.uniform() < travelChance:
         others = [g for g in range(len(GROUP_CENTRES)) if g != agent.group]
         agent.visiting = int(np.random.choice(others))
@@ -67,14 +66,14 @@ def moveAgent(agent, stepSize, travelChance, travelSpeed, leash, stayLength):
     dx, dy = cx - agent.x, cy - agent.y
     dist = np.sqrt(dx * dx + dy * dy)
     if dist > leash:
-        # too far from the group's meeting point (travelling there): walk straight towards it
+        # too far from the meeting point (still travelling there): walk straight at it
         agent.x += travelSpeed * dx / dist
         agent.y += travelSpeed * dy / dist
     else:
         randomWalk(agent, stepSize)
         dx, dy = cx - agent.x, cy - agent.y
         dist = np.sqrt(dx * dx + dy * dy)
-        if dist > leash:                         # random step went outside the group area, pull back to the edge
+        if dist > leash:                         # random step took them outside the group area, pull back to the edge
             agent.x = cx - dx * leash / dist
             agent.y = cy - dy * leash / dist
         if agent.visiting is not None:           # arrived and visiting: count down, then go home
@@ -84,7 +83,7 @@ def moveAgent(agent, stepSize, travelChance, travelSpeed, leash, stayLength):
 
 
 def moveAgents(agents, stepSize, travelChance, travelSpeed, leash, stayLength):
-    # ARTICLE: moveAgents (loop over all agents and move each one)
+    # ARTICLE: moveAgents (loop over everyone and move them)
     for agent in agents:
         moveAgent(agent, stepSize, travelChance, travelSpeed, leash, stayLength)
     return agents

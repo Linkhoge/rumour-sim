@@ -6,4 +6,3 @@ pymunk
 pillow
 pytiled-parser
 # then run separately: pip install --no-deps arcade
-pygame-ce   # only for the older --pygame window
