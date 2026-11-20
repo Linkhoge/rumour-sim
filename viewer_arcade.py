@@ -428,7 +428,7 @@ class RumourWindow(arcade.Window):
 
         self.label("logTitle", "latest passes (teller -> new person)", x0, y, DIM, 10)
         y += 16
-        for k, entry in enumerate(self.log[::-1][:8]):
+        for k, entry in enumerate(self.log[::-1][:5]):
             col = LINE_COL[SPREADER] if entry[4] == "rumour" else LINE_COL[CORRECTOR] if entry[4] == "correction" else DIM
             self.label("log" + str(k), "t" + str(entry[0]) + "  #" + str(entry[1]) + " -> #" + str(entry[2])
                        + "   hop " + str(entry[3])
@@ -439,6 +439,8 @@ class RumourWindow(arcade.Window):
 
         if self.selected is not None:
             for k, line in enumerate(describe(self.agents, self.selected)):
+                if y > SIM - 50:                              # no room left above the key hints
+                    break
                 self.label("sel" + str(k), ("Selected " if k == 0 else "") + line, x0, y, WHITE, 10)
                 y += 14
         else:
