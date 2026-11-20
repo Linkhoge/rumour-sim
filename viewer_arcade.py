@@ -14,14 +14,17 @@ Following who told who:
     - spreaders and correctors are big and bright with a glow, everyone else is small and dim
     - when someone passes it on there's an arrow from the teller to the new person and a ring pulses
       on them. arrows fade after about 5 seconds (T keeps them)
+    - dots grow with how many people they told, so the big ones are the superspreaders (S turns this on/off).
+      the top 3 are labelled and the top 5 are listed on the right
     - the gold path is the chain from patient zero to the newest person to catch it (numbers are hops).
       click an agent to trace theirs instead (white)
-    - hover over an agent to see its details
+    - hover over an agent to see its details, including its interest and gullibility
     - the list on the right names the agents (#id -> #id)
 
 Controls:
     SPACE pause   UP/DOWN speed   R replay   ESC or Q quit
-    T keep arrows   G colour by hop   F follow newest on/off   H group rings on/off
+    S size dots by how many people they told   T keep arrows   G colour by hop
+    F follow newest on/off   H group rings on/off
     CLICK an agent to trace who told them
 """
 import math
@@ -47,6 +50,10 @@ DOT_ACTIVE = 5                  # radius of a spreader or corrector
 DOT_IDLE = 2.5                  # radius of everyone else
 DOT_HOP = 4                     # radius when colouring by hop (G)
 PULSE_SIZE = 18                 # how far the ring on a new person grows
+SPREAD_BASE = 3                 # superspreader view: radius of someone who told 1 person is about this + SPREAD_GROW
+SPREAD_GROW = 3                 # radius grows with the square root of how many people they told
+SPREAD_MAX = 16                 # biggest radius a dot can get in this view
+CHART_HEIGHT = 140              # height of the counts-over-time chart in pixels
 
 BG = (11, 16, 32)
 PANEL = (17, 24, 46)
@@ -56,6 +63,7 @@ GOLD = (255, 214, 10)
 WHITE = (255, 255, 255)
 IGNORED_COL = (150, 160, 185)   # arrow to someone who heard it but didn't pass it on
 SUBJECT_COL = (255, 105, 180)   # ring around the subject
+SPREAD_COL = (255, 159, 10)     # someone who told people but has stopped spreading (superspreader view)
 # unaware and stiflers are dim on purpose so the spreaders stand out
 STATE_COL = [(58, 66, 92), (255, 77, 77), (46, 214, 170), (78, 92, 128)]       # unaware, spreader, corrector, stifler
 LINE_COL = [(130, 145, 180), (255, 77, 77), (46, 214, 170), (130, 145, 180)]   # brighter versions for the panel
@@ -104,7 +112,7 @@ def traceChain(agents, idx):
     return chain[::-1]
 
 
-def describe(agents, i):
+def describe(agents, i, p):
     # lines of text about one agent (hover popup and side panel)
     a = agents[i]
     grp = "no group" if a.group == NO_GROUP else "group " + GROUP_NAMES[a.group]
@@ -119,6 +127,11 @@ def describe(agents, i):
         lines.append("has not had the rumour")
     if a.corrGeneration >= 0:
         lines.append("started the correction" if a.corrSource < 0 else "heard the correction from #" + str(a.corrSource))
+    # their traits, to see why they did or didn't pass it on
+    lines.append("interest " + format(a.interest, ".2f") + "   gullibility " + format(a.gullibility, ".2f"))
+    if not a.isSubject:
+        minI = p.get("minInterest", 1.0)
+        lines.append("chance to pass it on: " + str(int(round(100 * (minI + (1 - minI) * a.interest)))) + "%")
     return lines
 
 
@@ -135,6 +148,7 @@ class RumourWindow(arcade.Window):
         self.paused = False
         self.treeMode = False
         self.genMode = False
+        self.spreadMode = True          # superspreader view, on by default
         self.follow = True
         self.rings = False
         self.mousePos = (-1000, -1000)
@@ -151,6 +165,8 @@ class RumourWindow(arcade.Window):
         self.pulses = []                # [agent index, born time, colour]
         self.log = []                   # latest passes: (step, from, to, hop, kind)
         self.latest = -1                # most recent agent to catch the rumour
+        self.told = [0] * n             # how many people each agent has told
+        self.top = []                   # the agents who told the most people, biggest first
         self.t = 0
         self.acc = 0.0
         self.selected = None
@@ -203,6 +219,8 @@ class RumourWindow(arcade.Window):
             self.treeMode = not self.treeMode
         elif symbol == k.G:
             self.genMode = not self.genMode
+        elif symbol == k.S:
+            self.spreadMode = not self.spreadMode
         elif symbol == k.F:
             self.follow = not self.follow
         elif symbol == k.H:
@@ -242,6 +260,15 @@ class RumourWindow(arcade.Window):
                 self.history.append(countStates(self.agents))
                 self.t += 1
 
+        # how many people each agent has told (from the told-by links), and who told the most
+        told = [0] * len(self.agents)
+        for a in self.agents:
+            if a.infector >= 0:
+                told[a.infector] += 1
+        self.told = told
+        order = sorted(range(len(told)), key=lambda i: -told[i])
+        self.top = [i for i in order[:5] if told[i] > 0]
+
         # drawn positions ease towards the real ones, this is what stops the jitter
         k = 1 - math.exp(-dt * SMOOTH_RATE)
         self.shown += (self.realPositions() - self.shown) * k
@@ -266,6 +293,11 @@ class RumourWindow(arcade.Window):
                 col, rad = GEN_COL[a.generation % len(GEN_COL)], DOT_HOP
             else:
                 col, rad = STATE_COL[a.state], (DOT_ACTIVE if active else DOT_IDLE)
+            if self.spreadMode and self.told[i] > 0:
+                # superspreader view: bigger the more people they told. ones who have stopped spreading go orange
+                rad = max(rad, min(SPREAD_MAX, SPREAD_BASE + SPREAD_GROW * math.sqrt(self.told[i])))
+                if not active and not self.genMode:
+                    col = SPREAD_COL
             dot = self.dots[i]
             dot.position = (sx, sy)
             if self.dotStyle[i] != (col, rad):
@@ -353,6 +385,14 @@ class RumourWindow(arcade.Window):
                 arcade.draw_circle_outline(x, y, 14, SUBJECT_COL, 2)
                 self.label("subject", "SUBJECT", x - 4, SIM - y - 20, SUBJECT_COL, 10, True)
 
+        if self.spreadMode:                                   # label the top 3 spreaders, gold ring on the biggest
+            for r, i in enumerate(self.top[:3]):
+                x, y = self.toScreen(self.shown[i])
+                if r == 0:
+                    arcade.draw_circle_outline(x, y, SPREAD_MAX + 4, GOLD, 2)
+                self.label("top" + str(r), "#" + str(i) + " told " + str(self.told[i]),
+                           x + 12, SIM - y - 4, GOLD if r == 0 else TEXT, 10, r == 0)
+
         for k in range(len(GROUP_CENTRES)):                   # group names
             cx, cy = GROUP_CENTRES[k][0] * SCALE, GROUP_CENTRES[k][1] * SCALE
             self.label("grp" + str(k), "Group " + GROUP_NAMES[k], cx - 28, SIM - (cy + rad + 4), GROUP_COL[k], 10)
@@ -367,7 +407,7 @@ class RumourWindow(arcade.Window):
         hv = self.nearestAgent(self.mousePos, 12)
         if hv is None:
             return
-        lines = describe(self.agents, hv)
+        lines = describe(self.agents, hv, self.p)
         w = max(len(s) for s in lines) * 7 + 14
         h = 16 * len(lines) + 8
         bx = min(mx + 14, SIM - w - 4)
@@ -397,11 +437,11 @@ class RumourWindow(arcade.Window):
             arcade.draw_circle_filled(x0 + 6, SIM - (y + 8), 5, LINE_COL[k])
             self.label("count" + str(k), STATE_NAMES[k] + ": " + str(counts[k]) + "  (" + STATE_HELP[k] + ")", x0 + 20, y)
             y += 18
-        self.label("stats", "had the rumour: " + str(stats["everHadRumour"]) + "   hops from patient 0: "
-                   + str(stats["maxGeneration"]), x0, y, DIM, 10)
+        self.label("stats", "had the rumour: " + str(stats["everHadRumour"]) + "   ignored it: "
+                   + str(stats["ignoredIt"]), x0, y, DIM, 10)
         y += 22
 
-        cw, ch = SIDE - 40, 100                               # live chart
+        cw, ch = SIDE - 40, CHART_HEIGHT                      # live chart
         bottom = SIM - (y + ch)
         arcade.draw_lbwh_rectangle_filled(x0, bottom, cw, ch, (24, 32, 60))
         arcade.draw_lbwh_rectangle_outline(x0, bottom, cw, ch, (60, 72, 110), 1)
@@ -414,16 +454,17 @@ class RumourWindow(arcade.Window):
         self.label("chart", "counts over time", x0 + 6, y + 4, DIM, 10)
         y += ch + 10
 
-        self.label("barsTitle", "agents per hop from patient 0", x0, y, DIM, 10)
+        self.label("topTitle", "top spreaders (told the most people)", x0, y, DIM, 10)
         y += 16
-        sizes = stats["generationSizes"]
-        biggest = max(sizes) if sizes else 1
-        for g in range(min(len(sizes), 14)):
-            w = int(sizes[g] / biggest * (SIDE - 120))
-            arcade.draw_lbwh_rectangle_filled(x0 + 50, SIM - (y + 10), max(w, 2), 8, GEN_COL[g % len(GEN_COL)])
-            self.label("barL" + str(g), "hop " + str(g), x0, y - 1, DIM, 9)
-            self.label("barV" + str(g), str(sizes[g]), x0 + 55 + w, y - 1, DIM, 9)
-            y += 12
+        if len(self.top) == 0:
+            self.label("topNone", "nobody has passed it on yet", x0, y, DIM, 10)
+            y += 14
+        for k, i in enumerate(self.top[:5]):
+            a = self.agents[i]
+            grp = "no group" if a.group == NO_GROUP else "group " + GROUP_NAMES[a.group]
+            self.label("topRow" + str(k), "#" + str(i) + "  told " + str(self.told[i]) + "   " + grp,
+                       x0, y, GOLD if k == 0 else TEXT, 10)
+            y += 14
         y += 10
 
         self.label("logTitle", "latest passes (teller -> new person)", x0, y, DIM, 10)
@@ -431,15 +472,14 @@ class RumourWindow(arcade.Window):
         for k, entry in enumerate(self.log[::-1][:5]):
             col = LINE_COL[SPREADER] if entry[4] == "rumour" else LINE_COL[CORRECTOR] if entry[4] == "correction" else DIM
             self.label("log" + str(k), "t" + str(entry[0]) + "  #" + str(entry[1]) + " -> #" + str(entry[2])
-                       + "   hop " + str(entry[3])
                        + ("  (correction)" if entry[4] == "correction" else "  (ignored it)" if entry[4] == "ignored" else ""),
                        x0, y, col, 10)
             y += 14
         y += 10
 
         if self.selected is not None:
-            for k, line in enumerate(describe(self.agents, self.selected)):
-                if y > SIM - 50:                              # no room left above the key hints
+            for k, line in enumerate(describe(self.agents, self.selected, self.p)):
+                if y > SIM - 66:                              # no room left above the key hints
                     break
                 self.label("sel" + str(k), ("Selected " if k == 0 else "") + line, x0, y, WHITE, 10)
                 y += 14
@@ -449,6 +489,7 @@ class RumourWindow(arcade.Window):
 
         flags = ("T arrows: " + ("keep" if self.treeMode else "fade") + "   G hop colours: " + ("on" if self.genMode else "off")
                  + "   F follow: " + ("on" if self.follow else "off") + "   H rings: " + ("on" if self.rings else "off"))
+        self.label("help0", "S spreader size: " + ("on" if self.spreadMode else "off"), x0, SIM - 54, DIM, 10)
         self.label("help1", "SPACE pause  UP/DOWN speed  R replay  ESC quit", x0, SIM - 38, DIM, 10)
         self.label("help2", flags, x0, SIM - 22, DIM, 10)
 

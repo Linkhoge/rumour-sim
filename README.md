@@ -31,18 +31,27 @@ benchmarks, never time the window.
   stay a while, then go home.
 - Big bright dots with a glow are spreaders (red) and correctors (green). Small dim dots are everyone
   else. Diamonds are agents with no group.
+- Dots grow with how many people they told, so the big ones are the superspreaders. Someone who told
+  people but has stopped spreading goes orange. The top 3 are labelled (gold ring on the biggest) and
+  the top 5 are listed on the right. Press S to turn this off.
 - Arrows: red = rumour passed on, green = correction passed on, grey = heard the rumour but didn't pass it on.
 - White ring = patient zero. Pink ring = the subject.
 - The gold path is the chain from patient zero to the newest person to catch it. Click an agent to
-  trace theirs in white. Hover over an agent for details.
-- Keys: space pause, up/down speed, R replay, T keep all arrows, G colour by hop, F follow newest on/off,
-  H group rings, esc quit.
+  trace theirs in white.
+- Hover over an agent for details. It shows the agent's interest (how likely they are to pass gossip on)
+  and gullibility (how easily they pick the rumour up), plus their chance of passing it on, so you can
+  see why one agent passed it on and another didn't.
+- Keys: space pause, up/down speed, R replay, S size dots by how many they told, T keep all arrows,
+  G colour by hop, F follow newest on/off, H group rings, esc quit.
 
 States:
 - Unaware: hasn't heard it
 - Spreader: telling others
 - Corrector: spreading the correction
 - Stifler: heard it and isn't passing it on any more (timer ran out, or they didn't care)
+
+Hop = how many people the rumour passed through to get from patient zero to someone. It is a
+position in the chain, not a time.
 
 ## Files
 - agent.py: Agent class and the states
