@@ -29,7 +29,7 @@ def makeAgents(n, seed, noGroupFraction, leash):
         else:
             group = i % len(GROUP_CENTRES)
             x, y = randomPointNear(GROUP_CENTRES[group], leash)
-        agents.append(Agent(x, y, UNAWARE, np.random.uniform(), group))
+        agents.append(Agent(x, y, UNAWARE, np.random.uniform(), group, interest=np.random.uniform()))
     return agents
 
 
@@ -39,6 +39,15 @@ def seedSpreaders(agents, howMany, group):
     inGroup = [i for i in range(len(agents)) if agents[i].group == group]
     for i in np.random.choice(inGroup, howMany, replace=False):
         agents[i].becomeSpreader()
+    return agents
+
+
+def pickSubject(agents, group):
+    # OUR OWN: the rumour is ABOUT one agent (the subject). They are an ordinary member of a group (choose a
+    # different group to patient zero) and are not patient zero. They are not told, they find out like anyone else.
+    options = [i for i in range(len(agents)) if agents[i].group == group and agents[i].state == UNAWARE]
+    i = int(np.random.choice(options))
+    agents[i].isSubject = True
     return agents
 
 
@@ -73,13 +82,16 @@ def pickSource(closeRow, old, wanted):
     return int(np.random.choice(options))
 
 
-def rollSpread(agents, t, contactRadius, rumourStrength, correctionStrength):
+def rollSpread(agents, t, contactRadius, rumourStrength, correctionStrength, minInterest=1.0, subjectDenies=1.0):
     # ARTICLE: rollInfect. Distance matrix, then agents within a set distance can pass it on,
     #   with a random roll against resistance (infected if roll > resistance).
     # OUR OWN: roll < gullibility (same idea flipped), two competing messages, and decisions use the
     #   OLD states then get applied at the end, so the order of agents does not matter
     #   (the article changes agents while looping, which depends on the order).
     #   We also record WHO passed it on, so we can draw who told who.
+    # OUR OWN: hearing it is not the same as passing it on. Someone who hears the rumour passes it on with chance
+    #   minInterest + (1 - minInterest) * their interest. Otherwise they do not believe it or do not care: they become
+    #   a stifler at once and stay in the simulation. The subject, when they hear it, denies it (becomes a corrector).
     positions = getPosition(agents)
     dist = distance_matrix(positions, positions)
     close = dist < contactRadius
@@ -94,6 +106,7 @@ def rollSpread(agents, t, contactRadius, rumourStrength, correctionStrength):
     newStates = list(old)
     rumourFrom = [-1] * len(agents)
     correctFrom = [-1] * len(agents)
+    how = ["correct"] * len(agents)               # OUR OWN: why the state changed (spread, ignore, subject, correct)
     for i in range(len(agents)):
         g = agents[i].gullibility
         pRumour = 1 - (1 - g * rumourStrength) ** nr[i]                    # more contacts, more chances
@@ -107,8 +120,20 @@ def rollSpread(agents, t, contactRadius, rumourStrength, correctionStrength):
                 else:
                     gotCorrect = False
             if gotRumour:
-                newStates[i] = SPREADER
                 rumourFrom[i] = pickSource(close[i], old, SPREADER)
+                if agents[i].isSubject:
+                    if np.random.uniform() < subjectDenies:
+                        newStates[i] = CORRECTOR
+                        how[i] = "subject"
+                    else:
+                        newStates[i] = STIFLER
+                        how[i] = "ignore"
+                elif np.random.uniform() < minInterest + (1 - minInterest) * agents[i].interest:
+                    newStates[i] = SPREADER
+                    how[i] = "spread"
+                else:
+                    newStates[i] = STIFLER
+                    how[i] = "ignore"
             elif gotCorrect:
                 newStates[i] = CORRECTOR
                 correctFrom[i] = pickSource(close[i], old, CORRECTOR)
@@ -119,9 +144,15 @@ def rollSpread(agents, t, contactRadius, rumourStrength, correctionStrength):
 
     for i in range(len(agents)):
         if newStates[i] != old[i]:
-            if newStates[i] == SPREADER:
+            if how[i] == "spread":
                 s = rumourFrom[i]
                 agents[i].becomeSpreader(s, oldGen[s] + 1, t)
+            elif how[i] == "ignore":
+                s = rumourFrom[i]
+                agents[i].becomeIgnorer(s, oldGen[s] + 1, t)
+            elif how[i] == "subject":
+                s = rumourFrom[i]
+                agents[i].becomeSubjectCorrector(s, oldGen[s] + 1, t)
             else:
                 s = correctFrom[i]
                 agents[i].becomeCorrector(s, oldCorrGen[s] + 1, t)
@@ -139,7 +170,8 @@ def stepSimulation(agents, t, p):
     # ONE time step. The viewer and the headless run both call this, so they always match.
     agents = moveAgents(agents, p["stepSize"], p["travelChance"], p["travelSpeed"], p["leash"], p["stayLength"])
     agents = tickAgents(agents)
-    agents = rollSpread(agents, t, p["contactRadius"], p["rumourStrength"], p["correctionStrength"])
+    agents = rollSpread(agents, t, p["contactRadius"], p["rumourStrength"], p["correctionStrength"],
+                         p.get("minInterest", 1.0), p.get("subjectDenies", 1.0))
     if t == p["correctionStart"]:
         agents = seedCorrectors(agents, p["correctionSeeds"], t)
     return agents
@@ -172,6 +204,14 @@ def transmissionStats(agents):
     sizes = [0] * (maxGen + 1)                       # how many agents were in each hop from patient zero
     for i in ever:
         sizes[agents[i].generation] += 1
+    subject = [a for a in agents if a.isSubject]
+    subjectHeardAt = None
+    subjectHops = None
+    heardBeforeSubject = None
+    if subject and subject[0].heardAt is not None:
+        subjectHeardAt = subject[0].heardAt
+        subjectHops = subject[0].generation
+        heardBeforeSubject = len([a for a in agents if a.heardAt is not None and a.heardAt <= subjectHeardAt])
     return {
         "everHadRumour": len(ever),
         "maxGeneration": maxGen,
@@ -179,6 +219,10 @@ def transmissionStats(agents):
         "passedOnToNobody": len([i for i in ever if i not in children]),
         "mostPassedOn": children[best] if best >= 0 else 0,
         "biggestSpreader": best,
+        "ignoredIt": len([a for a in agents if a.ignored]),       # heard it, did not pass it on
+        "subjectHeardAtStep": subjectHeardAt,                     # None = the subject never found out
+        "subjectHops": subjectHops,                               # hops from patient zero to the subject
+        "heardBeforeSubject": heardBeforeSubject,                 # how many had heard it when the subject did
     }
 
 

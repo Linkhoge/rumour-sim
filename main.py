@@ -11,12 +11,13 @@ File: main.py
 Run:
     python main.py                                 live Arcade window, asks for the rumour
     python main.py "rumour text"                   live Arcade window with the rumour given
+    python main.py "rumour text" --n=200           fewer agents (nicer to watch)
     python main.py "rumour text" --pygame          the older pygame window instead (needs pygame-ce)
     python main.py "rumour text" --headless        no window, runs and saves the plots (use this for benchmarks)
 """
 import os
 import sys
-from simulation import makeAgents, seedSpreaders, runSimulation, transmissionStats
+from simulation import makeAgents, seedSpreaders, pickSubject, runSimulation, transmissionStats
 from plots import plotCurve, plotGroupSpreaders, plotTree
 
 headless = "--headless" in sys.argv
@@ -33,20 +34,26 @@ if rumour == "":
 
 # ARTICLE: parameters at the top. OUR OWN: extra settings below.
 n = 500
+for a in sys.argv[1:]:
+    if a.startswith("--n="):
+        n = int(a[4:])                  # OUR OWN: number of agents from the command line
 steps = 400
 seed = 42
 startSpreaders = 1              # one person starts the rumour (patient zero)
 startGroup = 0                  # ...in group A
+subjectGroup = 3                # OUR OWN: the rumour is ABOUT someone in group D (the far corner from group A)
 noGroupFraction = 0.2           # OUR OWN: share of agents that belong to no group
 
 settings = {
     "stepSize": 1.5,            # ARTICLE: stepSize
-    "contactRadius": 3,         # ARTICLE: infection distance (it used 5 in code, 10 in text)
+    "contactRadius": 4 * (500 / n) ** 0.5,   # OUR OWN: scaled with n so each agent meets about as many people
     "rumourStrength": 0.06,     # OUR OWN: chance scale per contact, found by trial and error
     "correctionStrength": 0.1,  # OUR OWN
-    "correctionStart": 60,      # OUR OWN: step the correction starts
-    "correctionSeeds": 5,       # OUR OWN
-    "leash": 11,                # OUR OWN: how far group members stray from their meeting point
+    "correctionStart": 60,      # OUR OWN: step the extra correctors appear (only if correctionSeeds > 0)
+    "correctionSeeds": 0,       # OUR OWN: 0 = the only correction comes from the subject denying it
+    "minInterest": 0.3,         # OUR OWN: lowest chance someone who hears it passes it on (1.0 = everyone does)
+    "subjectDenies": 1.0,       # OUR OWN: chance the subject denies it when they hear it (otherwise they shrug)
+    "leash": 15,                # OUR OWN: how far group members stray from their meeting point
     "travelChance": 0.003,      # OUR OWN: chance per step that a group member starts visiting another group
     "travelSpeed": 2.0,         # OUR OWN
     "stayLength": 40,           # OUR OWN: steps a visitor stays before going home
@@ -56,7 +63,8 @@ settings = {
 def build():
     # makes a fresh set of agents (the viewer calls this again when R is pressed)
     agents = makeAgents(n, seed, noGroupFraction, settings["leash"])
-    return seedSpreaders(agents, startSpreaders, startGroup)
+    agents = seedSpreaders(agents, startSpreaders, startGroup)
+    return pickSubject(agents, subjectGroup)
 
 
 os.makedirs("results", exist_ok=True)

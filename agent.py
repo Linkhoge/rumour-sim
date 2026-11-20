@@ -21,7 +21,7 @@ NO_GROUP = -1   # OUR OWN: agents who do not belong to any group
 
 class Agent():
     # ARTICLE: Agent has x, y, infected, resistance, infectedCounter
-    def __init__(self, x, y, state, gullibility, group, counter=0):
+    def __init__(self, x, y, state, gullibility, group, counter=0, interest=1.0):
         self.x = x
         self.y = y
         self.state = state                # ARTICLE: infected
@@ -36,6 +36,10 @@ class Agent():
         self.corrSource = -1              # agent number who gave this agent the CORRECTION
         self.corrGeneration = -1          # hops from the first corrector
         self.changedAt = -2               # step when the state last changed (used to draw new hops)
+        self.interest = interest          # OUR OWN: how much they care about gossip (0 = not at all, 1 = loves it)
+        self.isSubject = False            # OUR OWN: the rumour is ABOUT this agent
+        self.ignored = False              # OUR OWN: heard the rumour but chose not to pass it on
+        self.heardAt = None               # OUR OWN: step they first heard the rumour (None = never)
 
     def becomeSpreader(self, source=-1, generation=0, t=-1):
         # ARTICLE: infect() sets infected and the counter. OUR OWN: also remember who told us.
@@ -44,6 +48,33 @@ class Agent():
         self.infector = source
         self.generation = generation
         self.changedAt = t
+        if self.heardAt is None:
+            self.heardAt = t
+
+    def becomeIgnorer(self, source, generation, t):
+        # OUR OWN: heard the rumour but does not believe it or does not care, so never passes it on.
+        # They stay in the simulation as a stifler. We still record who told them (to draw the arrow).
+        self.state = STIFLER
+        self.counter = 0
+        self.infector = source
+        self.generation = generation
+        self.ignored = True
+        self.changedAt = t
+        if self.heardAt is None:
+            self.heardAt = t
+
+    def becomeSubjectCorrector(self, source, generation, t):
+        # OUR OWN: the subject hears the rumour about themselves and denies it. They are the FIRST corrector
+        # (corrSource -1, hop 0). We still record who told them the rumour (infector, generation).
+        self.state = CORRECTOR
+        self.counter = HOW_LONG
+        self.infector = source
+        self.generation = generation
+        self.corrSource = -1
+        self.corrGeneration = 0
+        self.changedAt = t
+        if self.heardAt is None:
+            self.heardAt = t
 
     def becomeCorrector(self, source=-1, generation=0, t=-1):
         # OUR OWN: same for the correction (kept separate so the rumour tree stays clean)
