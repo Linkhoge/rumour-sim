@@ -27,6 +27,9 @@ Same seed, n and settings gives the same run every time. R in the window replays
 benchmarks, never time the window.
 
 ## Reading the window
+- At the start, patient zero and the subject are drawn together in the middle for about 3 seconds, then
+  they glide to their groups (2 more seconds) and the simulation starts. This is only how it is drawn,
+  the model is not changed. ENTER skips it and R plays it again.
 - The faint circles are where groups A to D hang out. Group members sometimes walk to another group,
   stay a while, then go home.
 - Big bright dots with a glow are spreaders (red) and correctors (green). Small dim dots are everyone
@@ -41,8 +44,8 @@ benchmarks, never time the window.
 - Hover over an agent for details. It shows the agent's interest (how likely they are to pass gossip on)
   and gullibility (how easily they pick the rumour up), plus their chance of passing it on, so you can
   see why one agent passed it on and another didn't.
-- Keys: space pause, up/down speed, R replay, S size dots by how many they told, T keep all arrows,
-  G colour by hop, F follow newest on/off, H group rings, esc quit.
+- Keys: space pause, up/down speed, R replay, ENTER skip the intro, S size dots by how many they told,
+  T keep all arrows, G colour by hop, F follow newest on/off, H group rings, esc quit.
 
 States:
 - Unaware: hasn't heard it

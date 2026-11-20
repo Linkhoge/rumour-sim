@@ -10,6 +10,10 @@ File: viewer_arcade.py
 The live window, made with Arcade. It only draws things. It calls stepSimulation() and reads the
 agents, so it doesn't change the model.
 
+Intro: for the first few seconds patient zero and the subject are drawn together in the middle, then
+they glide to their real places in their groups and the simulation starts. This is only how it is drawn,
+the model is not touched. ENTER skips it, R plays it again.
+
 Following who told who:
     - spreaders and correctors are big and bright with a glow, everyone else is small and dim
     - when someone passes it on there's an arrow from the teller to the new person and a ring pulses
@@ -22,7 +26,7 @@ Following who told who:
     - the list on the right names the agents (#id -> #id)
 
 Controls:
-    SPACE pause   UP/DOWN speed   R replay   ESC or Q quit
+    SPACE pause   UP/DOWN speed   R replay   ENTER skip the intro   ESC or Q quit
     S size dots by how many people they told   T keep arrows   G colour by hop
     F follow newest on/off   H group rings on/off
     CLICK an agent to trace who told them
@@ -42,6 +46,10 @@ SMOOTH_RATE = 14                # higher = drawn positions catch up faster, lowe
 ARROW_LIFE = 5.0                # seconds an arrow stays (unless T)
 PULSE_LIFE = 1.0                # seconds the ring on a new person pulses
 FONT = ("Consolas", "Menlo", "DejaVu Sans Mono", "Courier New")
+
+INTRO_HOLD = 3.0                # seconds patient zero and the subject stay together in the middle
+INTRO_GLIDE = 2.0               # seconds they take to glide to their groups (the simulation starts after this)
+INTRO_GAP = 5                   # how far apart they are in the middle, in box units
 
 # how the agents look, change these if you want
 GLOW_RADIUS = 11                # size of the glow around spreaders and correctors
@@ -170,6 +178,17 @@ class RumourWindow(arcade.Window):
         self.t = 0
         self.acc = 0.0
         self.selected = None
+        # intro: patient zero and the subject are drawn together in the middle until the intro is over
+        self.intro = 0.0                # seconds into the intro
+        mid = BOX / 2
+        self.introPos = {}
+        for j, i in enumerate(self.zeros):
+            self.introPos[i] = (mid - INTRO_GAP - 2 * j, mid)
+        for i in range(n):
+            if self.agents[i].isSubject:
+                self.introPos[i] = (mid + INTRO_GAP, mid)
+        for i, pos in self.introPos.items():
+            self.shown[i] = pos
         # one glow and one dot sprite per agent. the glow is drawn additive
         self.glowList = arcade.SpriteList()
         self.dotList = arcade.SpriteList()
@@ -211,6 +230,8 @@ class RumourWindow(arcade.Window):
             self.close()
         elif symbol == k.SPACE:
             self.paused = not self.paused
+        elif symbol == k.ENTER:
+            self.intro = INTRO_HOLD + INTRO_GLIDE         # skip the intro
         elif symbol == k.UP:
             self.speedIdx = min(self.speedIdx + 1, len(SPEEDS) - 1)
         elif symbol == k.DOWN:
@@ -239,9 +260,13 @@ class RumourWindow(arcade.Window):
     def on_update(self, delta_time):
         dt = min(delta_time, 0.05)
         self.now += dt
+        introTotal = INTRO_HOLD + INTRO_GLIDE
+        intro = self.intro < introTotal                   # the simulation waits until the intro is over
+        if intro:
+            self.intro += dt
         events = []
         finished = self.t >= self.steps
-        if not self.paused and not finished:
+        if not self.paused and not finished and not intro:
             self.acc += dt * TICKS_PER_SECOND * SPEEDS[self.speedIdx]
             while self.acc >= 1 and self.t < self.steps:
                 self.acc -= 1
@@ -271,7 +296,13 @@ class RumourWindow(arcade.Window):
 
         # drawn positions ease towards the real ones, this is what stops the jitter
         k = 1 - math.exp(-dt * SMOOTH_RATE)
-        self.shown += (self.realPositions() - self.shown) * k
+        real = self.realPositions()
+        self.shown += (real - self.shown) * k
+        if self.intro < introTotal:                       # intro: hold in the middle, then glide to their groups
+            u = max(0.0, (self.intro - INTRO_HOLD) / INTRO_GLIDE)
+            e = u * u * (3 - 2 * u)                       # slow start, slow finish
+            for i, (ix, iy) in self.introPos.items():
+                self.shown[i] = (ix + (real[i][0] - ix) * e, iy + (real[i][1] - iy) * e)
 
         for src, i, col, kind, hop, tt in events:
             x1, y1 = self.toScreen(self.shown[src])
@@ -385,6 +416,12 @@ class RumourWindow(arcade.Window):
                 arcade.draw_circle_outline(x, y, 14, SUBJECT_COL, 2)
                 self.label("subject", "SUBJECT", x - 4, SIM - y - 20, SUBJECT_COL, 10, True)
 
+        if self.intro < INTRO_HOLD:                           # captions while they are together in the middle
+            cx, cy = (BOX / 2) * SCALE, (BOX / 2) * SCALE
+            self.label("intro0", "PATIENT 0 starts the rumour", cx - 110, SIM - cy + 30, WHITE, 11, True)
+            self.label("intro1", "the SUBJECT is who it's about", cx - 110, SIM - cy + 48, SUBJECT_COL, 11, True)
+            self.label("intro2", "press ENTER to skip", cx - 110, SIM - cy + 68, DIM, 10)
+
         if self.spreadMode:                                   # label the top 3 spreaders, gold ring on the biggest
             for r, i in enumerate(self.top[:3]):
                 x, y = self.toScreen(self.shown[i])
@@ -429,7 +466,8 @@ class RumourWindow(arcade.Window):
         y += 4
         finished = self.t >= self.steps
         self.label("step", "step " + str(self.t) + " / " + str(self.steps) + "   " + str(SPEEDS[self.speedIdx]) + "x"
-                   + ("   PAUSED" if self.paused else "") + ("   FINISHED (R replays)" if finished else ""), x0, y)
+                   + ("   PAUSED" if self.paused else "") + ("   FINISHED (R replays)" if finished else "")
+                   + ("   INTRO" if self.intro < INTRO_HOLD + INTRO_GLIDE else ""), x0, y)
         y += 22
         counts = countStates(self.agents)
         stats = transmissionStats(self.agents)
@@ -489,7 +527,7 @@ class RumourWindow(arcade.Window):
 
         flags = ("T arrows: " + ("keep" if self.treeMode else "fade") + "   G hop colours: " + ("on" if self.genMode else "off")
                  + "   F follow: " + ("on" if self.follow else "off") + "   H rings: " + ("on" if self.rings else "off"))
-        self.label("help0", "S spreader size: " + ("on" if self.spreadMode else "off"), x0, SIM - 54, DIM, 10)
+        self.label("help0", "S spreader size: " + ("on" if self.spreadMode else "off") + "    ENTER skips the intro", x0, SIM - 54, DIM, 10)
         self.label("help1", "SPACE pause  UP/DOWN speed  R replay  ESC quit", x0, SIM - 38, DIM, 10)
         self.label("help2", flags, x0, SIM - 22, DIM, 10)
 
