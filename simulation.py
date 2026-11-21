@@ -1,160 +1,423 @@
-"""Serial snapshot contagion adapted from Le Nguyen; social rules are experimental."""
+"""Serial rumour spread adapted from Le Nguyen"""
 import numpy as np
 from scipy.spatial import distance_matrix
-from agent import Agent,UNAWARE,SPREADER,CORRECTOR,STIFLER,NO_GROUP
-from movement import GROUP_CENTRES,randomPointNear,randomPointInBox,moveAgents
 
-def makeAgents(n,seed,noGroupFraction,leash):
+from agent import Agent, UNAWARE, SPREADER, CORRECTOR, STIFLER, NO_GROUP
+from movement import GROUP_CENTRES, randomPointNear, randomPointInBox, moveAgents
+
+
+def makeAgents(n, seed, noGroupFraction, leash):
+    """Make agents and give them random traits"""
     if n <= 0 or not 0 <= noGroupFraction <= 1:
-        raise ValueError('Invalid population or no-group fraction')
+        raise ValueError("Invalid population or no-group fraction")
+
     np.random.seed(seed)
     agents = []
+
     for i in range(n):
-        group = NO_GROUP if np.random.random() < noGroupFraction else i%4
-        x,y = randomPointInBox() if group == NO_GROUP else randomPointNear(GROUP_CENTRES[group],leash)
-        a = Agent(x,y,UNAWARE,np.random.random(),group,interest=np.random.random())
-        a.openness,a.loyalty = np.random.uniform(0,1,2)
-        a.routeSide = 1 if i%2 else -1
-        agents.append(a)
+        if np.random.random() < noGroupFraction:
+            group = NO_GROUP
+        else:
+            group = i % 4
+
+        if group == NO_GROUP:
+            x, y = randomPointInBox()
+        else:
+            x, y = randomPointNear(GROUP_CENTRES[group], leash)
+
+        agent = Agent(
+            x, y, UNAWARE, np.random.random(), group,
+            interest=np.random.random(),
+        )
+        agent.openness, agent.loyalty = np.random.uniform(0, 1, 2)
+
+        # alternate side used to move around subject
+        agent.routeSide = 1 if i % 2 else -1
+        agents.append(agent)
+
     return agents
 
-def seedSpreaders(agents,howMany,group):
-    options = [i for i,a in enumerate(agents) if a.group == group and not a.isSubject]
+
+def seedSpreaders(agents, howMany, group):
+    """Choose agents that start with rumour"""
+    options = [
+        i for i, agent in enumerate(agents)
+        if agent.group == group and not agent.isSubject
+    ]
+
     if howMany < 0 or howMany > len(options):
-        raise ValueError('Not enough initial spreader candidates')
-    for i in np.random.choice(options,howMany,replace=False):
+        raise ValueError("Not enough initial spreader candidates")
+
+    for i in np.random.choice(options, howMany, replace=False):
         agents[i].becomeSpreader()
+
     return agents
 
-def pickSubject(agents,group,friendCount=12,lingerCount=4,friendRadius=4):
-    options = [i for i,a in enumerate(agents) if a.group == group and a.state == UNAWARE]
+
+def pickSubject(agents, group, friendCount=12, lingerCount=4, friendRadius=4):
+    """Choose subject and give them friends"""
+    options = [
+        i for i, agent in enumerate(agents)
+        if agent.group == group and agent.state == UNAWARE
+    ]
+
     if not options:
-        raise ValueError('No subject candidate')
+        raise ValueError("No subject candidate")
+
     subject = agents[int(np.random.choice(options))]
     subject.isSubject = True
-    candidates = [a for a in agents if a is not subject]
-    for j,k in enumerate(np.random.choice(len(candidates),min(friendCount,len(candidates)),replace=False)):
-        a = candidates[k]
-        a.isFriend = a.wasFriend = True
-        a.linger = j < lingerCount
-        if a.linger:
-            a.x,a.y = randomPointNear((subject.x,subject.y),friendRadius)
-        if a.believed:
-            a.beliefDecided = a.avoiding = False
-            a.acceptBelief(-1)
+
+    candidates = [agent for agent in agents if agent is not subject]
+    choices = np.random.choice(
+        len(candidates), min(friendCount, len(candidates)), replace=False
+    )
+
+    for friendNumber, choice in enumerate(choices):
+        friend = candidates[choice]
+        friend.isFriend = True
+        friend.wasFriend = True
+
+        # first few friends stay close to subject
+        friend.linger = friendNumber < lingerCount
+
+        if friend.linger:
+            friend.x, friend.y = randomPointNear(
+                (subject.x, subject.y), friendRadius
+            )
+
+        if friend.believed:
+            # let friendship and avoidance choice happen again
+            friend.beliefDecided = False
+            friend.avoiding = False
+            friend.acceptBelief(-1)
+
     return agents
 
-def seedCorrectors(agents,howMany,t):
-    options = [i for i,a in enumerate(agents) if a.state == UNAWARE and not a.isSubject]
-    for i in np.random.choice(options,min(howMany,len(options)),replace=False):
-        agents[i].becomeCorrector(-1,0,t)
+
+def seedCorrectors(agents, howMany, time):
+    """Add correction spreaders"""
+    options = [
+        i for i, agent in enumerate(agents)
+        if agent.state == UNAWARE and not agent.isSubject
+    ]
+
+    for i in np.random.choice(options, min(howMany, len(options)), replace=False):
+        agents[i].becomeCorrector(-1, 0, time)
+
     return agents
 
-def getPosition(agents):
-    return np.array([[a.x,a.y] for a in agents])
-def getState(agents):
-    return [a.state for a in agents]
-def pickSource(row,old,wanted):
-    options = np.where(row & (old == wanted))[0]
-    return int(np.random.choice(options)) if len(options) else -1
 
-def rollSpread(agents,t,contactRadius,rumourStrength,correctionStrength,minInterest=1.,subjectDenies=1.,correctionRadius=None):
-    distances = distance_matrix(getPosition(agents),getPosition(agents))
+def getPositions(agents):
+    """Agent positions as NumPy array"""
+    return np.array([[agent.x, agent.y] for agent in agents])
+
+
+def getStates(agents):
+    return [agent.state for agent in agents]
+
+
+def pickSource(row, oldStates, wantedState):
+    """Pick one nearby agent with wanted state"""
+    options = np.where(row & (oldStates == wantedState))[0]
+
+    if len(options):
+        return int(np.random.choice(options))
+
+    return -1
+
+
+def rollSpread(
+    agents, time, contactRadius, rumourStrength, correctionStrength,
+    minInterest=1.0, subjectDenies=1.0, correctionRadius=None,
+):
+    """Decide which agents hear rumour or correction"""
+    positions = getPositions(agents)
+    distances = distance_matrix(positions, positions)
+
     close = distances < contactRadius
-    correctionClose = distances < (contactRadius if correctionRadius is None else correctionRadius)
-    np.fill_diagonal(close,False)
-    np.fill_diagonal(correctionClose,False)
-    old = np.array(getState(agents))
-    gen,corrGen = [a.generation for a in agents],[a.corrGeneration for a in agents]
-    nr,nc = close[:,old == SPREADER].sum(axis=1),correctionClose[:,old == CORRECTOR].sum(axis=1)
+
+    if correctionRadius is None:
+        correctionRadius = contactRadius
+
+    correctionClose = distances < correctionRadius
+
+    # agent cannot pass message to itself
+    np.fill_diagonal(close, False)
+    np.fill_diagonal(correctionClose, False)
+
+    oldStates = np.array(getStates(agents))
+    generations = [agent.generation for agent in agents]
+    correctionGenerations = [agent.corrGeneration for agent in agents]
+
+    # count nearby spreaders and correctors
+    nearbySpreaders = close[:, oldStates == SPREADER].sum(axis=1)
+    nearbyCorrectors = correctionClose[:, oldStates == CORRECTOR].sum(axis=1)
+
     events = []
-    for i,a in enumerate(agents):
-        pr = 1-(1-a.gullibility*rumourStrength)**nr[i]
-        pc = 1-(1-a.openness*correctionStrength)**nc[i]
-        if old[i] == UNAWARE:
-            rumour,correction = np.random.random() < pr,np.random.random() < pc
-            if rumour and correction:
-                if np.random.random() < .5:
-                    rumour = False
+
+    for i, agent in enumerate(agents):
+        rumourChance = 1 - (1 - agent.gullibility * rumourStrength) ** nearbySpreaders[i]
+        correctionChance = 1 - (1 - agent.openness * correctionStrength) ** nearbyCorrectors[i]
+
+        if oldStates[i] == UNAWARE:
+            hearsRumour = np.random.random() < rumourChance
+            hearsCorrection = np.random.random() < correctionChance
+
+            # if both work only one is used
+            if hearsRumour and hearsCorrection:
+                if np.random.random() < 0.5:
+                    hearsRumour = False
                 else:
-                    correction = False
-            if rumour:
-                s = pickSource(close[i],old,SPREADER)
-                if a.isSubject:
-                    kind = 'subject' if np.random.random() < subjectDenies else 'ignore'
+                    hearsCorrection = False
+
+            if hearsRumour:
+                source = pickSource(close[i], oldStates, SPREADER)
+
+                if agent.isSubject:
+                    if np.random.random() < subjectDenies:
+                        event = "subject"
+                    else:
+                        event = "ignore"
                 else:
-                    kind = 'spread' if np.random.random() < minInterest+(1-minInterest)*a.sharingTendency else 'silent'
-                events.append((i,kind,s,gen[s]+1))
-            elif correction:
-                s = pickSource(correctionClose[i],old,CORRECTOR)
-                events.append((i,'correct',s,corrGen[s]+1))
-        elif old[i] in (SPREADER,STIFLER) and a.corrGeneration < 0 and np.random.random() < pc:
-            s = pickSource(correctionClose[i],old,CORRECTOR)
-            events.append((i,'correct',s,corrGen[s]+1))
-    methods = dict(spread='becomeSpreader',silent='becomeSilentBeliever',ignore='becomeIgnorer',subject='becomeSubjectCorrector',correct='becomeCorrector')
-    for i,kind,s,g in events:
-        getattr(agents[i],methods[kind])(s,g,t)
+                    shareChance = minInterest + (1 - minInterest) * agent.sharingTendency
+
+                    if np.random.random() < shareChance:
+                        event = "spread"
+                    else:
+                        event = "silent"
+
+                events.append((i, event, source, generations[source] + 1))
+
+            elif hearsCorrection:
+                source = pickSource(correctionClose[i], oldStates, CORRECTOR)
+                events.append((i, "correct", source, correctionGenerations[source] + 1))
+
+        elif oldStates[i] in (SPREADER, STIFLER):
+            notCorrectedYet = agent.corrGeneration < 0
+
+            if notCorrectedYet and np.random.random() < correctionChance:
+                source = pickSource(correctionClose[i], oldStates, CORRECTOR)
+                events.append((i, "correct", source, correctionGenerations[source] + 1))
+
+    # apply changes after checking every agent
+    for i, event, source, generation in events:
+        agent = agents[i]
+
+        if event == "spread":
+            agent.becomeSpreader(source, generation, time)
+        elif event == "silent":
+            agent.becomeSilentBeliever(source, generation, time)
+        elif event == "ignore":
+            agent.becomeIgnorer(source, generation, time)
+        elif event == "subject":
+            agent.becomeSubjectCorrector(source, generation, time)
+        elif event == "correct":
+            agent.becomeCorrector(source, generation, time)
+
     return agents
 
-def tickAgents(agents):
-    for a in agents:
-        a.tick()
+
+def stepSimulation(agents, time, settings):
+    """Run movement timers and rumour spread for one step"""
+    subject = None
+
+    for agent in agents:
+        if agent.isSubject:
+            subject = agent
+            break
+
+    correctionDuration = settings.get("correctionDuration", 110)
+    avoidChance = settings.get("avoidChance", 0.75)
+
+    for agent in agents:
+        agent.correctionDuration = correctionDuration
+
+        if not agent.beliefDecided:
+            agent.avoidChance = avoidChance
+
+    avoidRadius = settings.get("avoidRadius", 7)
+
+    if subject is not None and subject.state == UNAWARE and avoidRadius > 0:
+        nearbyAvoiders = []
+
+        for agent in agents:
+            if not agent.avoiding:
+                continue
+
+            dx = agent.x - subject.x
+            dy = agent.y - subject.y
+            distanceSquared = dx * dx + dy * dy
+
+            if distanceSquared < (avoidRadius + 2) ** 2:
+                nearbyAvoiders.append(agent)
+
+        subject.shunned += len(nearbyAvoiders)
+
+        # subject notices avoidance after enough people avoid
+        if nearbyAvoiders and subject.shunned >= settings.get("noticeAfter", 20):
+            subject.becomeSubjectCorrector(-1, -1, time)
+
+    moveAgents(
+        agents, settings["stepSize"], settings["travelChance"],
+        settings["travelSpeed"], settings["leash"], settings["stayLength"],
+        subject, avoidRadius,
+        avoidVisualBuffer=settings.get("avoidVisualBuffer", 1.15),
+    )
+
+    for agent in agents:
+        agent.tick()
+
+    rollSpread(
+        agents, time, settings["contactRadius"], settings["rumourStrength"],
+        settings["correctionStrength"], settings.get("minInterest", 0.5),
+        settings.get("subjectDenies", 1.0), settings.get("correctionRadius"),
+    )
+
+    if time == settings["correctionStart"]:
+        seedCorrectors(agents, settings["correctionSeeds"], time)
+
     return agents
 
-def stepSimulation(agents,t,p):
-    subject = next((a for a in agents if a.isSubject),None)
-    for a in agents:
-        a.correctionDuration = p.get('correctionDuration',110)
-        if not a.beliefDecided:
-            a.avoidChance = p.get('avoidChance',.75)
-    radius = p.get('avoidRadius',7)
-    if subject is not None and subject.state == UNAWARE and radius > 0:
-        nearby = [a for a in agents if a.avoiding and (a.x-subject.x)**2+(a.y-subject.y)**2 < (radius+2)**2]
-        subject.shunned += len(nearby)
-        if nearby and subject.shunned >= p.get('noticeAfter',20):
-            subject.becomeSubjectCorrector(-1,-1,t)
-    moveAgents(agents,p['stepSize'],p['travelChance'],p['travelSpeed'],p['leash'],p['stayLength'],subject,radius,avoidVisualBuffer=p.get('avoidVisualBuffer',1.15))
-    tickAgents(agents)
-    rollSpread(agents,t,p['contactRadius'],p['rumourStrength'],p['correctionStrength'],p.get('minInterest',.5),p.get('subjectDenies',1.),p.get('correctionRadius'))
-    if t == p['correctionStart']:
-        seedCorrectors(agents,p['correctionSeeds'],t)
-    return agents
 
 def countStates(agents):
-    states = getState(agents)
-    return [states.count(s) for s in range(4)]
+    """Count agents in each state"""
+    states = getStates(agents)
+    return [states.count(state) for state in range(4)]
+
+
 def countSpreadersByGroup(agents):
-    counts = [0]*5
-    for a in agents:
-        if a.state == SPREADER:
-            counts[a.group+1] += 1
+    """Count active spreaders in each group plus no group"""
+    counts = [0] * 5
+
+    for agent in agents:
+        if agent.state == SPREADER:
+            counts[agent.group + 1] += 1
+
     return counts
-def nearSubject(agents,radius):
-    subject = next((a for a in agents if a.isSubject),None)
-    near = [] if subject is None else [a for a in agents if a is not subject and (a.x-subject.x)**2+(a.y-subject.y)**2 < radius**2]
-    return [len(near),sum(a.believed for a in near)]
+
+
+def nearSubject(agents, radius):
+    """Count agents near subject and believers near subject"""
+    subject = None
+
+    for agent in agents:
+        if agent.isSubject:
+            subject = agent
+            break
+
+    if subject is None:
+        return [0, 0]
+
+    nearby = []
+
+    for agent in agents:
+        if agent is subject:
+            continue
+
+        dx = agent.x - subject.x
+        dy = agent.y - subject.y
+
+        if dx * dx + dy * dy < radius ** 2:
+            nearby.append(agent)
+
+    return [len(nearby), sum(agent.believed for agent in nearby)]
+
+
 def transmissionStats(agents):
-    ever = [a for a in agents if a.generation >= 0]
+    """Collect final rumour statistics"""
+    everHadRumour = [agent for agent in agents if agent.generation >= 0]
     children = {}
-    for a in agents:
-        if a.infector >= 0:
-            children[a.infector] = children.get(a.infector,0)+1
-    best = max(children,key=children.get) if children else -1
-    maxGen = max([a.generation for a in ever],default=0)
-    subject = next((a for a in agents if a.isSubject),None)
-    heard = subject.heardAt if subject else None
-    return dict(everHadRumour=len(ever),maxGeneration=maxGen,generationSizes=[sum(a.generation == g for a in ever) for g in range(maxGen+1)],
-        passedOnToNobody=sum(i not in children for i,a in enumerate(agents) if a.generation >= 0),mostPassedOn=children.get(best,0),biggestSpreader=best,
-        ignoredIt=sum(a.ignored for a in agents),believers=sum(a.believed for a in agents),subjectHeardAtStep=heard,
-        subjectHops=subject.generation if subject and subject.generation >= 0 else None,
-        heardBeforeSubject=sum(a.heardAt is not None and a.heardAt <= heard for a in agents) if heard is not None else None,
-        friends=sum(a.isFriend for a in agents),lostFriends=sum(a.wasFriend and not a.isFriend for a in agents),
-        silentBelievers=sum(a.believed and a.state == STIFLER for a in agents),everCorrected=sum(a.corrGeneration >= 0 for a in agents))
-def runSimulation(agents,steps,p):
-    counts,groups,near = [],[],[]
-    for t in range(steps):
-        stepSimulation(agents,t,p)
+
+    for agent in agents:
+        if agent.infector >= 0:
+            children[agent.infector] = children.get(agent.infector, 0) + 1
+
+    if children:
+        biggestSpreader = max(children, key=children.get)
+        mostPassedOn = children[biggestSpreader]
+    else:
+        biggestSpreader = -1
+        mostPassedOn = 0
+
+    maxGeneration = max(
+        [agent.generation for agent in everHadRumour], default=0
+    )
+
+    generationSizes = []
+
+    for generation in range(maxGeneration + 1):
+        generationSizes.append(
+            sum(agent.generation == generation for agent in everHadRumour)
+        )
+
+    passedOnToNobody = sum(
+        i not in children
+        for i, agent in enumerate(agents)
+        if agent.generation >= 0
+    )
+
+    subject = None
+
+    for agent in agents:
+        if agent.isSubject:
+            subject = agent
+            break
+
+    if subject is None:
+        subjectHeardAt = None
+        subjectHops = None
+        heardBeforeSubject = None
+    else:
+        subjectHeardAt = subject.heardAt
+
+        if subject.generation >= 0:
+            subjectHops = subject.generation
+        else:
+            subjectHops = None
+
+        if subjectHeardAt is None:
+            heardBeforeSubject = None
+        else:
+            heardBeforeSubject = sum(
+                agent.heardAt is not None and agent.heardAt <= subjectHeardAt
+                for agent in agents
+            )
+
+    return {
+        "everHadRumour": len(everHadRumour),
+        "maxGeneration": maxGeneration,
+        "generationSizes": generationSizes,
+        "passedOnToNobody": passedOnToNobody,
+        "mostPassedOn": mostPassedOn,
+        "biggestSpreader": biggestSpreader,
+        "ignoredIt": sum(agent.ignored for agent in agents),
+        "believers": sum(agent.believed for agent in agents),
+        "subjectHeardAtStep": subjectHeardAt,
+        "subjectHops": subjectHops,
+        "heardBeforeSubject": heardBeforeSubject,
+        "friends": sum(agent.isFriend for agent in agents),
+        "lostFriends": sum(
+            agent.wasFriend and not agent.isFriend for agent in agents
+        ),
+        "silentBelievers": sum(
+            agent.believed and agent.state == STIFLER for agent in agents
+        ),
+        "everCorrected": sum(agent.corrGeneration >= 0 for agent in agents),
+    }
+
+
+def runSimulation(agents, steps, settings):
+    """Run model and save counts after every step"""
+    counts = []
+    groupCounts = []
+    nearCounts = []
+
+    nearRadius = settings.get("nearRadius", 10)
+
+    for time in range(steps):
+        stepSimulation(agents, time, settings)
         counts.append(countStates(agents))
-        groups.append(countSpreadersByGroup(agents))
-        near.append(nearSubject(agents,p.get('nearRadius',10)))
-    return np.array(counts),np.array(groups),np.array(near)
+        groupCounts.append(countSpreadersByGroup(agents))
+        nearCounts.append(nearSubject(agents, nearRadius))
+
+    return np.array(counts), np.array(groupCounts), np.array(nearCounts)
