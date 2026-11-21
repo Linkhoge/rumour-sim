@@ -9,6 +9,7 @@ Comments without a tag are ours.
 File: movement.py
 All the movement is here. Everyone shares one box with no walls. Each group hangs around a meeting
 point, agents with no group wander, and group members sometimes visit another group then go home.
+Agents who believe the rumour keep away from the subject.
 """
 import numpy as np
 from agent import NO_GROUP
@@ -82,8 +83,30 @@ def moveAgent(agent, stepSize, travelChance, travelSpeed, leash, stayLength):
                 agent.visiting = None
 
 
-def moveAgents(agents, stepSize, travelChance, travelSpeed, leash, stayLength):
+def avoidSubject(agent, subject, avoidRadius, avoidSpeed, avoidChance, stayLength):
+    # a believer who gets within avoidRadius of the subject is pushed away from them (most of the time).
+    # a believer from the subject's own group leaves to visit another group instead of staying close
+    dx, dy = agent.x - subject.x, agent.y - subject.y
+    dist = np.sqrt(dx * dx + dy * dy)
+    if dist >= avoidRadius or np.random.uniform() >= avoidChance:
+        return
+    if dist < 0.01:                              # right on top of them, pick any direction
+        angle = np.random.uniform(0, 2 * np.pi)
+        dx, dy, dist = np.cos(angle), np.sin(angle), 1.0
+    agent.x += avoidSpeed * dx / dist
+    agent.y += avoidSpeed * dy / dist
+    clampToBox(agent)
+    if agent.group != NO_GROUP and agent.group == subject.group and agent.visiting is None:
+        others = [g for g in range(len(GROUP_CENTRES)) if g != agent.group]
+        agent.visiting = int(np.random.choice(others))
+        agent.stay = stayLength
+
+
+def moveAgents(agents, stepSize, travelChance, travelSpeed, leash, stayLength,
+               subject=None, avoidRadius=0, avoidSpeed=0, avoidChance=0):
     # ARTICLE: moveAgents (loop over everyone and move them)
     for agent in agents:
         moveAgent(agent, stepSize, travelChance, travelSpeed, leash, stayLength)
+        if subject is not None and agent.believed and not agent.isSubject:     # believers keep away from the subject
+            avoidSubject(agent, subject, avoidRadius, avoidSpeed, avoidChance, stayLength)
     return agents

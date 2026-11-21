@@ -20,8 +20,7 @@ import os
 import sys
 import time
 from simulation import makeAgents, seedSpreaders, pickSubject, runSimulation, transmissionStats
-from plots import plotCurve, plotGroupSpreaders, plotTree
-from viewer_arcade import runViewer
+from plots import plotCurve, plotGroupSpreaders, plotNearSubject, plotTree
 
 headless = "--headless" in sys.argv
 args = [a for a in sys.argv[1:] if not a.startswith("--")]
@@ -52,11 +51,16 @@ settings = {
     "stepSize": 1.5,            # ARTICLE: stepSize
     "contactRadius": 4 * (500 / n) ** 0.5,   # scaled with n so agents meet about the same number of people
     "rumourStrength": 0.06,     # found by trial and error
-    "correctionStrength": 0.1,
+    "correctionStrength": 0.03, # low on purpose: only a small pool of correctors
     "correctionStart": 60,      # only used if correctionSeeds > 0
     "correctionSeeds": 0,       # 0 = the only correction comes from the subject
-    "minInterest": 0.3,         # lowest chance someone who hears it passes it on (1.0 = everyone does)
+    "minInterest": 0.5,         # lowest chance someone who hears it believes it, so about 75% believe it on average
     "subjectDenies": 1.0,       # chance the subject denies it when they hear it
+    "avoidRadius": 7,           # believers keep this far from the subject (0 turns avoiding off)
+    "avoidSpeed": 1.5,          # how far a believer is pushed away per step
+    "avoidChance": 0.8,         # chance per step that a believer close to the subject moves away
+    "noticeAfter": 20,          # the subject realises something is up after this many close believers
+    "nearRadius": 10,           # how close counts as "near the subject" for the isolation numbers
     "leash": 15,                # how far group members stray from their meeting point
     "travelChance": 0.003,      # chance per step a group member starts visiting another group
     "travelSpeed": 2.0,
@@ -75,15 +79,18 @@ os.makedirs("results", exist_ok=True)
 if headless:
     agents = build()
     start = time.perf_counter()
-    counts, groupCounts = runSimulation(agents, steps, settings)
+    counts, groupCounts, near = runSimulation(agents, steps, settings)
     seconds = time.perf_counter() - start
+    stats = transmissionStats(agents)
     plotCurve(counts, "results/curve.png", rumour)
     plotGroupSpreaders(groupCounts, "results/group_spreaders.png")
+    plotNearSubject(near, "results/near_subject.png", stats["subjectHeardAtStep"], settings["nearRadius"])
     plotTree(agents, "results/tree.png")
     print("seed:", seed, "  n:", n, "  steps:", steps)
     print("final counts [unaware, spreader, corrector, stifler]:", counts[-1])
-    print("transmission:", transmissionStats(agents))
+    print("transmission:", stats)
     print("run time: %.2f s" % seconds)
 else:
+    from viewer_arcade import runViewer         # only needed for the live window
     agents, history = runViewer(build, steps, settings, rumour)
     print("stopped at step", len(history), "transmission:", transmissionStats(agents))

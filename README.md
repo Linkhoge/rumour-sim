@@ -3,9 +3,9 @@
 Members: Ariel Fajimiyo (more to be added)
 
 Agents move around one shared space and a rumour spreads between them. The rumour is about one agent
-(the subject) and it starts with a different agent (patient zero). When it finally reaches the subject
-they deny it, and that starts a correction spreading. Serial version first, then a parallel version,
-then benchmarks.
+(the subject) and it starts with a different agent (patient zero). Agents who believe the rumour keep away
+from the subject, and when the subject notices they deny it, which starts a correction spreading.
+Serial version first, then a parallel version, then benchmarks.
 
 ## Install
 ```
@@ -24,7 +24,7 @@ python main.py "rumour text" --seed=7     # different seed (default is 42)
 python main.py "rumour text" --headless   # no window, saves plots to results/ and prints the run time
 ```
 Same seed, n and settings gives the same run every time. R in the window replays it. Use --headless for
-benchmarks, never time the window.
+benchmarks, never time the window. Headless saves curve.png, group_spreaders.png, near_subject.png and tree.png.
 
 ## Reading the window
 - At the start, patient zero and the subject are drawn together in the middle for about 3 seconds, then
@@ -34,6 +34,11 @@ benchmarks, never time the window.
   stay a while, then go home.
 - Big bright dots with a glow are spreaders (red) and correctors (green). Small dim dots are everyone
   else. Diamonds are agents with no group.
+- Believers (about 75% of the people who hear it) keep away from the subject. The faint pink circle around
+  the subject is how close they will come. The panel shows how many agents are near the subject now,
+  compared with the start, and how many of them are believers. If believers keep coming close and moving
+  away, the subject realises something is up and denies the rumour. Correctors and people who ignored it
+  carry on as normal.
 - Dots grow with how many people they told, so the big ones are the superspreaders. Someone who told
   people but has stopped spreading goes orange. The top 3 are labelled (gold ring on the biggest) and
   the top 5 are listed on the right. Press S to turn this off.
@@ -42,7 +47,7 @@ benchmarks, never time the window.
 - The gold path is the chain from patient zero to the newest person to catch it. Click an agent to
   trace theirs in white.
 - Hover over an agent for details. It shows the agent's interest (how likely they are to pass gossip on)
-  and gullibility (how easily they pick the rumour up), plus their chance of passing it on, so you can
+  and gullibility (how easily they pick the rumour up), plus their chance of believing it, so you can
   see why one agent passed it on and another didn't.
 - Keys: space pause, up/down speed, R replay, ENTER skip the intro, S size dots by how many they told,
   T keep all arrows, G colour by hop, F follow newest on/off, H group rings, esc quit.
@@ -52,13 +57,14 @@ States:
 - Spreader: telling others
 - Corrector: spreading the correction
 - Stifler: heard it and isn't passing it on any more (timer ran out, or they didn't care)
+- Believer: a spreader, or a stifler who believed it. Believers keep away from the subject.
 
 Hop = how many people the rumour passed through to get from patient zero to someone. It is a
 position in the chain, not a time.
 
 ## Files
 - agent.py: Agent class and the states
-- movement.py: group meeting points, random walk, visits between groups
+- movement.py: group meeting points, random walk, visits between groups, believers avoiding the subject
 - simulation.py: setup, spread rule, one step, headless loop
 - viewer_arcade.py: the live window
 - plots.py: plots saved after a headless run
@@ -70,6 +76,7 @@ Comments tagged ARTICLE: come from the article (ref 1). Comments without a tag a
 ## Todo
 - [x] agents, groups, no-group agents, movement, visiting
 - [x] rumour about a subject, interest, correction starts from the subject
+- [x] believers avoid the subject, subject notices, isolation plot
 - [x] live window, headless mode, plots
 - [ ] random numbers from (seed, step, agent) so serial and parallel can match
 - [ ] numpy array version

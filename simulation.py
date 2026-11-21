@@ -169,7 +169,24 @@ def tickAgents(agents):
 
 def stepSimulation(agents, t, p):
     # one time step. the viewer and headless both call this so they always match
-    agents = moveAgents(agents, p["stepSize"], p["travelChance"], p["travelSpeed"], p["leash"], p["stayLength"])
+    subject = None
+    if p.get("avoidRadius", 0) > 0:                # find the subject so believers can keep away from them
+        for a in agents:
+            if a.isSubject:
+                subject = a
+                break
+    if subject is not None and subject.state == UNAWARE:
+        # the subject hasn't heard it, but they notice when believers keep coming close and then keeping away.
+        # after enough of that they realise something is going on and deny it (counted from the old positions)
+        r2 = p["avoidRadius"] ** 2
+        close = [((a.x - subject.x) ** 2 + (a.y - subject.y) ** 2, i) for i, a in enumerate(agents)
+                 if a.believed and not a.isSubject and (a.x - subject.x) ** 2 + (a.y - subject.y) ** 2 < r2]
+        subject.shunned += len(close)
+        if close and subject.shunned >= p.get("noticeAfter", 20):
+            s = min(close)[1]                      # the nearest believer is the one they noticed
+            subject.becomeSubjectCorrector(s, agents[s].generation + 1, t)
+    agents = moveAgents(agents, p["stepSize"], p["travelChance"], p["travelSpeed"], p["leash"], p["stayLength"],
+                        subject, p.get("avoidRadius", 0), p.get("avoidSpeed", 0), p.get("avoidChance", 0))
     agents = tickAgents(agents)
     agents = rollSpread(agents, t, p["contactRadius"], p["rumourStrength"], p["correctionStrength"],
                          p.get("minInterest", 1.0), p.get("subjectDenies", 1.0))
@@ -191,6 +208,21 @@ def countSpreadersByGroup(agents):
         if a.state == SPREADER:
             counts[a.group + 1] += 1
     return counts
+
+
+def nearSubject(agents, radius):
+    # [everyone, believers] within radius of the subject (shows how isolated they are)
+    for a in agents:
+        if a.isSubject:
+            allNear = 0
+            believersNear = 0
+            for b in agents:
+                if b is not a and (b.x - a.x) ** 2 + (b.y - a.y) ** 2 < radius * radius:
+                    allNear += 1
+                    if b.believed:
+                        believersNear += 1
+            return [allNear, believersNear]
+    return [0, 0]
 
 
 def transmissionStats(agents):
@@ -221,6 +253,7 @@ def transmissionStats(agents):
         "mostPassedOn": children[best] if best >= 0 else 0,
         "biggestSpreader": best,
         "ignoredIt": len([a for a in agents if a.ignored]),       # heard it, didn't pass it on
+        "believers": len([a for a in agents if a.believed]),      # believe it (and keep away from the subject)
         "subjectHeardAtStep": subjectHeardAt,                     # None = never found out
         "subjectHops": subjectHops,                               # hops from patient zero to the subject
         "heardBeforeSubject": heardBeforeSubject,                 # how many had heard it by then
@@ -231,8 +264,10 @@ def runSimulation(agents, steps, p):
     # ARTICLE: final loop (move, roll infect, record counts). no drawing, used for headless runs
     counts = []
     groupCounts = []
+    near = []                                      # how many agents are near the subject at each step
     for t in range(steps):
         agents = stepSimulation(agents, t, p)
         counts.append(countStates(agents))
         groupCounts.append(countSpreadersByGroup(agents))
-    return np.array(counts), np.array(groupCounts)
+        near.append(nearSubject(agents, p.get("nearRadius", 10)))
+    return np.array(counts), np.array(groupCounts), np.array(near)

@@ -25,6 +25,9 @@ Following who told who:
     - hover over an agent to see its details, including its interest and gullibility
     - the list on the right names the agents (#id -> #id)
 
+Isolation: believers keep away from the subject. The faint pink circle around the subject is how close
+they will come, and the panel counts how many agents are near the subject now compared with the start.
+
 Controls:
     SPACE pause   UP/DOWN speed   R replay   ENTER skip the intro   ESC or Q quit
     S size dots by how many people they told   T keep arrows   G colour by hop
@@ -36,7 +39,7 @@ import numpy as np
 import arcade
 from agent import UNAWARE, SPREADER, CORRECTOR, STIFLER, NO_GROUP
 from movement import BOX, GROUP_CENTRES, GROUP_NAMES
-from simulation import stepSimulation, countStates, transmissionStats
+from simulation import stepSimulation, countStates, transmissionStats, nearSubject
 
 SIM = 700                       # size of the square drawing area in pixels
 SIDE = 440                      # width of the side panel
@@ -133,13 +136,15 @@ def describe(agents, i, p):
             lines.append("heard it but didn't pass it on")
     else:
         lines.append("has not had the rumour")
+    if a.believed and not a.isSubject:
+        lines.append("believes it, keeps away from the subject")
     if a.corrGeneration >= 0:
         lines.append("started the correction" if a.corrSource < 0 else "heard the correction from #" + str(a.corrSource))
     # their traits, to see why they did or didn't pass it on
     lines.append("interest " + format(a.interest, ".2f") + "   gullibility " + format(a.gullibility, ".2f"))
     if not a.isSubject:
         minI = p.get("minInterest", 1.0)
-        lines.append("chance to pass it on: " + str(int(round(100 * (minI + (1 - minI) * a.interest)))) + "%")
+        lines.append("chance to believe it: " + str(int(round(100 * (minI + (1 - minI) * a.interest)))) + "%")
     return lines
 
 
@@ -175,6 +180,8 @@ class RumourWindow(arcade.Window):
         self.latest = -1                # most recent agent to catch the rumour
         self.told = [0] * n             # how many people each agent has told
         self.top = []                   # the agents who told the most people, biggest first
+        self.near = nearSubject(self.agents, self.p.get("nearRadius", 10))     # [everyone, believers] near the subject
+        self.near0 = self.near[0]       # how many were near the subject at the start
         self.t = 0
         self.acc = 0.0
         self.selected = None
@@ -293,6 +300,7 @@ class RumourWindow(arcade.Window):
         self.told = told
         order = sorted(range(len(told)), key=lambda i: -told[i])
         self.top = [i for i in order[:5] if told[i] > 0]
+        self.near = nearSubject(self.agents, self.p.get("nearRadius", 10))
 
         # drawn positions ease towards the real ones, this is what stops the jitter
         k = 1 - math.exp(-dt * SMOOTH_RATE)
@@ -414,6 +422,8 @@ class RumourWindow(arcade.Window):
             if self.agents[i].isSubject:
                 x, y = self.toScreen(self.shown[i])
                 arcade.draw_circle_outline(x, y, 14, SUBJECT_COL, 2)
+                if p.get("avoidRadius", 0) > 0:               # faint ring: how close believers will come
+                    arcade.draw_circle_outline(x, y, p["avoidRadius"] * SCALE, rgba(SUBJECT_COL, 70), 1)
                 self.label("subject", "SUBJECT", x - 4, SIM - y - 20, SUBJECT_COL, 10, True)
 
         if self.intro < INTRO_HOLD:                           # captions while they are together in the middle
@@ -476,7 +486,10 @@ class RumourWindow(arcade.Window):
             self.label("count" + str(k), STATE_NAMES[k] + ": " + str(counts[k]) + "  (" + STATE_HELP[k] + ")", x0 + 20, y)
             y += 18
         self.label("stats", "had the rumour: " + str(stats["everHadRumour"]) + "   ignored it: "
-                   + str(stats["ignoredIt"]), x0, y, DIM, 10)
+                   + str(stats["ignoredIt"]) + "   believers: " + str(stats["believers"]), x0, y, DIM, 10)
+        y += 16
+        self.label("near", "near the subject: " + str(self.near[0]) + " (was " + str(self.near0) + "), believers: "
+                   + str(self.near[1]), x0, y, SUBJECT_COL, 10)
         y += 22
 
         cw, ch = SIDE - 40, CHART_HEIGHT                      # live chart

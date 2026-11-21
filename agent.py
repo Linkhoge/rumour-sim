@@ -39,6 +39,8 @@ class Agent():
         self.isSubject = False            # the rumour is about this agent
         self.ignored = False              # heard it but didn't pass it on
         self.heardAt = None               # step they first heard it, None = never
+        self.believed = False             # believes the rumour, so keeps away from the subject
+        self.shunned = 0                  # subject only: how many times believers have been close enough to keep away
 
     def becomeSpreader(self, source=-1, generation=0, t=-1):
         # ARTICLE: infect() sets infected and the counter. we also remember who told us
@@ -47,6 +49,7 @@ class Agent():
         self.infector = source
         self.generation = generation
         self.changedAt = t
+        self.believed = True
         if self.heardAt is None:
             self.heardAt = t
 
@@ -59,6 +62,7 @@ class Agent():
         self.generation = generation
         self.ignored = True
         self.changedAt = t
+        self.believed = False
         if self.heardAt is None:
             self.heardAt = t
 
@@ -71,16 +75,19 @@ class Agent():
         self.corrSource = -1
         self.corrGeneration = 0
         self.changedAt = t
+        self.believed = False
         if self.heardAt is None:
             self.heardAt = t
 
     def becomeCorrector(self, source=-1, generation=0, t=-1):
-        # same for the correction, kept separate so the rumour tree stays clean
+        # same for the correction, kept separate so the rumour tree stays clean.
+        # someone who changes their mind stops believing, so they stop avoiding the subject
         self.state = CORRECTOR
         self.counter = HOW_LONG
         self.corrSource = source
         self.corrGeneration = generation
         self.changedAt = t
+        self.believed = False
 
     def tick(self):
         # ARTICLE: counter counts down, recovers at 0. same for correctors

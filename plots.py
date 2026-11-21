@@ -48,6 +48,22 @@ def plotGroupSpreaders(groupCounts, name):
     plt.close()
 
 
+def plotNearSubject(near, name, heardAt, radius):
+    # how many agents are close to the subject over time, and how many of those believe the rumour.
+    # the dashed line is the step the subject finds out
+    plt.figure()
+    plt.plot(near[:, 0], color="#264653", label="everyone near the subject")
+    plt.plot(near[:, 1], color="#d62828", label="believers near the subject")
+    if heardAt is not None:
+        plt.axvline(heardAt, color="#ff69b4", linestyle="--", label="subject finds out")
+    plt.xlabel("Time")
+    plt.ylabel("Agents within " + str(radius) + " units")
+    plt.title("Isolation of the subject")
+    plt.legend()
+    plt.savefig(name, bbox_inches="tight")
+    plt.close()
+
+
 def plotTree(agents, name):
     # who told who. one row per hop from patient zero, a line from each agent to whoever told them
     ever = [i for i in range(len(agents)) if agents[i].generation >= 0]
