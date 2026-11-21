@@ -172,7 +172,6 @@ Agent.correctionDuration and stepSimulation fallback still use 110 without match
 | 732f8a3 | Original viewer, compact groups, baseline correction defaults |
 | f64e8db / f9c79f9 | Avoidance rings/thin arrows; documentation consolidation |
 | 79bd57b / ac2168b | Larger agents and pointed no-group diamonds |
-| ed8c624 | GIF export removed; model and live viewer unchanged |
 
 ## Limits
 
@@ -185,6 +184,14 @@ python -m unittest discover -s tests -v
 - Dense distance/contact matrices: O(N^2) space/work.
 - Added social rules and chosen parameters are assumptions, not article validation.
 - Historical seed-specific counts are not regression targets or benchmark findings.
-- Next: full regression run; live checks; model-only timer; deterministic streams;
-  array reference; parallel implementation/equivalence; spatial-index evaluation;
-  benchmarks and client feedback log. S=Ts/Tp and E=S/p require comparable timings.
+
+## Outstanding work
+
+1. Run the complete regression suite; record environment and results.
+2. Check live layout, motion, indicators and graph hover.
+3. Add deterministic random streams and an array-based serial reference.
+4. Implement the parallel version and equivalence tests.
+5. Evaluate spatial indexing; measure dense-cell behaviour and load imbalance.
+6. Benchmark model-only runtime, speed-up `S=Ts/Tp` and efficiency `E=S/p`
+   across documented population sizes and worker counts.
+7. Record client feedback, experiments and attribution for submission/viva.
