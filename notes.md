@@ -1,107 +1,141 @@
-# Notes - Team Char Siu
+# Technical notes
 
-## How the model works
-- 500 agents by default (--n changes it) in one 100x100 box. 4 groups (A to D), each with a meeting point.
-  About 20% of agents have no group.
-- States: unaware, spreader, corrector, stifler.
-- One step (stepSimulation): the subject may notice, move, tick the timers, spread, maybe add correctors.
-- Movement (movement.py):
-  - group member: random walk, kept within `leash` of the meeting point
-  - no group: random walk anywhere in the box
-  - each step a group member has a `travelChance` of visiting another group. They walk there at
-    `travelSpeed`, stay `stayLength` steps, then walk home
-- The rumour is about one agent, the subject, who is in group D. Patient zero is one agent in group A.
-- Spread uses a distance matrix like the article. Two agents are in contact if they are closer than
-  `contactRadius`. Contact is between any agents, so groups mix where the circles overlap, through
-  visitors, and through no-group agents.
-  - P(rumour) = 1 - (1 - g * rumourStrength)^(spreaders in contact)
-  - P(correct) = 1 - (1 - (1 - g) * correctionStrength)^(correctors in contact)
-  - g = gullibility. If both happen in one step it's a coin flip. Spreaders can switch to corrector.
-- Hearing the rumour isn't the same as believing it. Each agent has an interest (0 to 1). If they hear
-  it they believe it with chance minInterest + (1 - minInterest) * interest, otherwise they go straight
-  to stifler. With minInterest 0.5 that is about 75% on average. They stay in the sim, they just don't
-  spread it.
-- Believers keep away from the subject. A believer is a spreader, or a stifler who believed it. Each step a
-  believer within `avoidRadius` of the subject is pushed away from them with chance `avoidChance`, and a
-  believer from the subject's own group leaves to visit another group. Correctors, people who ignored it and
-  people who haven't heard it behave as normal. A spreader who changes their mind and becomes a corrector
-  stops avoiding.
-- Because believers keep away, the subject may never be told directly. So the subject notices instead: each
-  step we count the believers within `avoidRadius` of them, and once the total reaches `noticeAfter` the
-  subject realises something is going on and denies it. The nearest believer is recorded as the one who told
-  them. This is how the subject finds out in practice.
-- When the subject finds out they deny it and become the first corrector, so the correction only starts
-  once the rumour has got to them. `correctionStrength` is low (0.03) on purpose, so only a small pool of
-  agents ends up as correctors.
-- Spreaders and correctors become stiflers after 50 steps.
-- Everyone decides from the old states and the changes are applied at the end, so the order of agents
-  doesn't matter.
+Current specification. Supersedes the standalone friendship/viewer update notes.
+Historical experiment counts are not current defaults or benchmark results.
 
-## Link to the article
-The article models disease with SIR (Susceptible, Infectious, Recovered). Ours maps onto it:
-- unaware = susceptible, spreader = infectious, stifler = recovered
-- the article's infection rate (beta) is like our rumourStrength times gullibility per contact. Its recovery
-  rate (gamma) is about 1/50 because the infected counter is 50 steps
-- the article raises resistance after recovery so agents can't be infected again. Our stiflers can't be
-  told again, which is the same idea
-- the article's infection curve has a hump (rises, peaks, falls). Our spreader line in the counts chart
-  has the same shape
+## Model
 
-## Article vs ours
-| Article | Ours |
+| State | Meaning |
 |---|---|
-| everyone random in one box | groups with meeting points, no-group agents, visits between groups |
-| 500 agents, 10 infected, 30% resistance, 500 steps | 500 agents, 1 patient zero, 400 steps |
-| infect distance 10 in the text, 5 in the code | contactRadius 4, scaled with n |
-| saved GIF | live window, `--headless` for benchmarks |
-| infected / healthy | 4 states |
-| roll > resistance | roll < gullibility |
-| updates in place | read old state, write new state |
-| one disease | rumour about a subject, believers who avoid them, and a correction |
+| Unaware | Has not accepted rumour or correction |
+| Spreader | Actively shares rumour |
+| Corrector | Actively shares correction |
+| Stifler | Inactive: silent believer, expired sharer or explicit rejecter |
 
-## Seeds
-One seed decides the whole run (np.random.seed in makeAgents). Default is 42. Same seed + n + settings
-gives the same run (we checked two runs of the same seed give identical results). For serial and parallel
-to match exactly we'll need random numbers from (seed, step, agent) instead, see todo 1.
+Belief, sharing, friendship and avoidance are separate. Timer expiry preserves
+belief. Correction clears belief/avoidance, not lost friendships. Previously
+corrected stiflers cannot be reactivated by correction exposure.
 
-## Settings
-`rumourStrength`, `correctionStrength`, `travelChance`, `leash`, `minInterest` and the avoid settings were
-found by trial and error, not from data. `contactRadius` is scaled with n so agents meet about the same
-number of people at any n. In our test runs (500 agents, 300 steps, seeds 1 and 2) about 280 agents ended up
-believing the rumour, 22 to 24 became correctors, and the subject found out at step 81 to 100. The number
-of believers within 10 units of the subject at the end was 2 to 6, compared with 10 to 20 with avoiding
-turned off. Check these again on your own machine.
+- Domain: 100x100. Centres: (33,33), (67,33), (33,67), (67,67). Group radius: 15.
+- No-group probability: 0.2. Home-group visits do not change group membership.
+- One patient zero in A; one unaware subject in D.
+- Up to 12 friends selected across groups/no-group agents; four start near the
+  subject and linger. Friends may believe and spread while remaining friends.
 
-## Todo
-1. Random numbers from (seed, step, agent) instead of np.random so serial and parallel match.
-2. Agent objects to numpy arrays (Numba can't use objects).
-3. Replace the O(n^2) distance matrix with a grid / cell list. The matrix is about 200 MB at 5,000
-   agents and about 3 GB at 20,000, so we need this for big n.
-4. Numba `prange` version.
-5. Equivalence test: same seed, serial output == parallel output.
-6. Benchmarks (headless only): n in {1k, 10k, 100k}, workers in {1, 2, 4, 8}. Time, speed-up S = Ts/Tp,
-   efficiency E = S/p.
-7. Experiments: vary travelChance, noGroupFraction, minInterest, avoidRadius, subjectDenies.
-8. Report, viva prep.
+## Transmission
 
-## Parallel plan
-- Movement and spread: each agent reads old state and only writes its own slot, so it's safe to split
-  by agent.
-- Avoiding the subject only reads the subject's position and the agent's own state, so it splits by agent
-  too. The subject noticing is a count over all agents (a reduction), so the parallel version needs a
-  reduction step for it.
-- The distance matrix is the bottleneck. A cell list takes it from O(n^2) to roughly O(n).
-- Groups make agents cluster, so the work per cell is uneven. Measure the load imbalance.
-- Never benchmark with the live window. Use `--headless`.
-- Expect poor speed-up for small n. Report it.
+```text
+P(rumour)     = 1 - (1 - gullibility * rumourStrength)^nearbySpreaders
+P(correction) = 1 - (1 - openness * correctionStrength)^nearbyCorrectors
+P(share | accepted) = minInterest + (1 - minInterest) * sharingTendency
+```
 
-## Maybe later
-Rumour text mutation using a transmission log and a separate post-processing module, outside the
-simulation loop.
+Sharing tendency reuses interest. Openness and loyalty are independent per-agent
+samples. No loudness/influence trait or downstream-reach leaderboard exists.
+Contacts use distance < radius, excluding self. Transmission reads old states;
+changes apply after sampling. If both messages succeed for an unaware agent,
+a fair coin selects one. Source attribution samples a nearby active sender
+uniformly; it does not log every conversation.
 
-## Questions for Joseph
-1. Is a rumour acceptable instead of a disease?
-2. Any limits on language or libraries? (Python + Numba planned)
-3. Is a live window enough for the graphic output, or do we also need a saved image/video?
-4. Target population size?
-5. Is shared-memory parallelism enough?
+Rumour acceptance without sharing creates a silent believer. Failed acceptance
+leaves the agent unaware. Explicit rejection uses the subject-denial branch;
+with subjectDenies=1, zero explicit rejections is expected. Uncorrected stiflers
+and active spreaders may accept correction.
+
+Direct-told counts use infector links, not descendants or correction sources.
+Equal counts are valid; the current viewer still highlights the first listed
+leader when counts tie. Joint-rank display remains outstanding.
+
+## Avoidance and friendship
+
+On first belief, a friend breaks away with probability 1 - loyalty. Breakup
+forces avoidance and ends lingering. A non-friend chooses avoidance once using
+avoidChance; loyal friends may remain nearby. Correction stops avoidance but
+does not restore friendship.
+
+Group members random-walk inside the target group circle or travel between
+groups. No-group agents random-walk across the domain. Avoiders have a hard
+exclusion radius, soft outward pressure beyond it and alternate targets when
+the subject blocks a group centre. Tangential fallback remains.
+
+safeMove checks path segments. Existing overlaps are evacuated to a feasible
+boundary point; this is not speed-limited physics. A moving subject may create
+an overlap between updates. Display interpolation also uses the collision guard.
+
+The subject accumulates observations of avoiders within avoidRadius + 2.
+At noticeAfter it starts correction without an invented teller/hop. Direct
+rumour contact can also trigger denial.
+
+## Step order
+
+```text
+set correction duration and pending avoidance probability
+subject observation -> subject movement -> other movement / avoidance
+timer expiry -> snapshot transmission -> apply transitions
+configured correction seeds -> record counts
+```
+
+## Defaults
+
+| Setting | Value | CLI |
+|---|---:|---|
+| Population | 500 | --n |
+| Steps | 400 | --steps |
+| Seed | 42 | --seed |
+| Centre distance from edges | 33 | --group-spread |
+| Group radius | 15 | --leash |
+| Correction strength | 0.03 | --correction-strength |
+| Correction active duration | 50 | --correction-duration |
+| Correction radius | Contact radius | --correction-radius |
+| Avoidance outer-zone multiplier | 1.15 | --avoid-visual-buffer |
+
+Code settings: contactRadius=4*sqrt(500/n), rumourStrength=0.06,
+rumour active duration=50, stepSize=1.5, travelChance=0.003, travelSpeed=2,
+stayLength=40, minInterest=0.5, subjectDenies=1, avoidRadius=7,
+avoidChance=0.75, noticeAfter=20, nearRadius=10, correctionStart=60,
+correctionSeeds=0. No correction-count cap.
+
+These are main.py defaults. Agent.correctionDuration and stepSimulation's
+fallback still use 110 if called without matching settings.
+
+## Rendering
+
+Original font/sprite viewer retained. Intro: 3s hold + 2s glide; model waits.
+S scales node radius with sqrt(direct recipients), with a visual ceiling only.
+T retains arrows or fades them over 5s; F follows the newest gold chain.
+Thin arrows: 1px transmissions, 1.5px gold/white chains. Red outer rings track
+actual avoidance, not all belief. Ex-friends remain violet after correction.
+Graph hover reads the nearest recorded step. Three leaderboard/log rows are
+visible; top-five tracking and recent history remain.
+
+## Implementation record
+
+| Commit | Change |
+|---|---|
+| 161a6b6 | Friendship/social rules, strict avoidance, import-safe CLI, tests |
+| b4e128e | Permanent correctors/wider panel; superseded |
+| f2c008c | Invalid placeholder commit; repaired by e69665a |
+| e69665a | Source repair, configurable correction/spacing, viewer changes |
+| 732f8a3 | Original viewer, compact groups, baseline correction defaults |
+| f64e8db | Red avoidance rings, thinner arrows; no model changes |
+
+## Limits and next work
+
+- Global NumPy RNG: draw order matters. Same seed does not establish
+  cross-version reproducibility or serial/parallel equivalence.
+- Dense distance/contact matrices: O(n^2) space/work.
+- Printed headless runtime includes statistics/plots. Add model-only timing.
+- Helper/mock tests do not validate a live Arcade context.
+- Social rules and parameters are experimental assumptions, not article validation.
+
+1. Run the complete regression suite; record environment/results.
+2. Check live layout, motion, indicators and graph hover.
+3. Add deterministic streams and an array-based serial reference.
+4. Implement parallel version and equivalence tests.
+5. Evaluate spatial indexing; measure dense-cell behaviour/load imbalance.
+6. Benchmark model-only runtime, S=Ts/Tp and E=S/p across documented sizes/workers.
+7. Record client feedback, experiments and attribution for submission/viva.
+
+```powershell
+python -m unittest discover -s tests -v
+```

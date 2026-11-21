@@ -1,98 +1,79 @@
-# Rumour spread simulation - Team Char Siu
+# Rumour simulation - Team Char Siu
 
-Members: Ariel Fajimiyo (more to be added)
+Serial mobile-agent rumour model. Python, NumPy, SciPy, Arcade.
+Parallel implementation and benchmarks: pending.
 
-Agents move around one shared space and a rumour spreads between them. The rumour is about one agent
-(the subject) and it starts with a different agent (patient zero). Agents who believe the rumour keep away
-from the subject, and when the subject notices they deny it, which starts a correction spreading.
-Serial version first, then a parallel version, then benchmarks.
+## Setup
 
-## Install
+```powershell
+python -m pip install -r requirements.txt
+python -m pip install --no-deps arcade
 ```
-pip install -r requirements.txt
-pip install --no-deps arcade
-```
-arcade goes in on its own because it pins an old pymunk that has no wheel for Python 3.14. This worked
-for us on Windows with 3.14.
+
+Arcade is installed separately in the current dependency workflow. Versions are
+not fully pinned; record the environment when comparing runs.
 
 ## Run
+
+```powershell
+python main.py "A rumour about the subject"
+python main.py "A rumour about the subject" --n=500 --steps=400 --seed=42
+python main.py "A rumour about the subject" --seed=7
+python main.py "A rumour about the subject" --headless
+python -m unittest discover -s tests -v
 ```
-python main.py                            # live window, asks for the rumour text
-python main.py "rumour text"              # live window
-python main.py "rumour text" --n=200      # fewer agents, easier to watch
-python main.py "rumour text" --seed=7     # different seed (default is 42)
-python main.py "rumour text" --headless   # no window, saves plots to results/ and prints the run time
-```
-Same seed, n and settings gives the same run every time. R in the window replays it. Use --headless for
-benchmarks, never time the window. Headless saves curve.png, group_spreaders.png, near_subject.png and tree.png.
 
-## Reading the window
-- At the start, patient zero and the subject are drawn together in the middle for about 3 seconds, then
-  they glide to their groups (2 more seconds) and the simulation starts. This is only how it is drawn,
-  the model is not changed. ENTER skips it and R plays it again.
-- The faint circles are where groups A to D hang out. Group members sometimes walk to another group,
-  stay a while, then go home.
-- Big bright dots with a glow are spreaders (red) and correctors (green). Small dim dots are everyone
-  else. Diamonds are agents with no group.
-- Believers (about 75% of the people who hear it) keep away from the subject. The faint pink circle around
-  the subject is how close they will come. The panel shows how many agents are near the subject now,
-  compared with the start, and how many of them are believers. If believers keep coming close and moving
-  away, the subject realises something is up and denies the rumour. Correctors and people who ignored it
-  carry on as normal.
-- Dots grow with how many people they told, so the big ones are the superspreaders. Someone who told
-  people but has stopped spreading goes orange. The top 3 are labelled (gold ring on the biggest) and
-  the top 5 are listed on the right. Press S to turn this off.
-- Arrows: red = rumour passed on, green = correction passed on, grey = heard the rumour but didn't pass it on.
-- White ring = patient zero. Pink ring = the subject.
-- The gold path is the chain from patient zero to the newest person to catch it. Click an agent to
-  trace theirs in white.
-- Hover over an agent for details. It shows the agent's interest (how likely they are to pass gossip on)
-  and gullibility (how easily they pick the rumour up), plus their chance of believing it, so you can
-  see why one agent passed it on and another didn't.
-- Keys: space pause, up/down speed, R replay, ENTER skip the intro, S size dots by how many they told,
-  T keep all arrows, G colour by hop, F follow newest on/off, H group rings, esc quit.
+Omit the rumour argument for an input prompt. Defaults: 500 agents, 400 steps,
+seed 42. R replays the same seed. Same code, settings and numerical environment
+are required for repeatable results.
 
-States:
-- Unaware: hasn't heard it
-- Spreader: telling others
-- Corrector: spreading the correction
-- Stifler: heard it and isn't passing it on any more (timer ran out, or they didn't care)
-- Believer: a spreader, or a stifler who believed it. Believers keep away from the subject.
+Headless outputs: `results/curve.png`, `group_spreaders.png`,
+`near_subject.png`, `tree.png`. The printed elapsed time includes plotting;
+it is not a model-only benchmark.
 
-Hop = how many people the rumour passed through to get from patient zero to someone. It is a
-position in the chain, not a time.
+## Controls
 
-## Files
-- agent.py: Agent class and the states
-- movement.py: group meeting points, random walk, visits between groups, believers avoiding the subject
-- simulation.py: setup, spread rule, one step, headless loop
-- viewer_arcade.py: the live window
-- plots.py: plots saved after a headless run
-- main.py: settings and entry point
-- notes.md: technical notes
+| Key | Action |
+|---|---|
+| Space | Pause/resume |
+| Up / Down | Speed |
+| Enter | Skip intro |
+| R | Replay |
+| S | Size by direct rumour transmissions |
+| T | Retain/fade transmission arrows |
+| G | Hop colours |
+| F | Follow newest rumour chain |
+| H | Group outlines |
+| Click agent | Inspect its rumour chain |
+| Hover agent / graph | Inspect traits / state counts |
+| Esc / Q | Quit |
 
-Comments tagged ARTICLE: come from the article (ref 1). Comments without a tag are ours.
+## Display
 
-## Todo
-- [x] agents, groups, no-group agents, movement, visiting
-- [x] rumour about a subject, interest, correction starts from the subject
-- [x] believers avoid the subject, subject notices, isolation plot
-- [x] live window, headless mode, plots
-- [ ] random numbers from (seed, step, agent) so serial and parallel can match
-- [ ] numpy array version
-- [ ] parallel version (Numba)
-- [ ] check serial and parallel give the same result
-- [ ] benchmarks (time, speed-up, efficiency)
+- Pale: unaware. Red: active rumour spreader. Green: active corrector.
+- Grey: inactive. Orange: inactive agent credited with previous transmissions.
+- Pink centre: subject/current friend. Violet centre: ex-friend.
+- Red outer ring: avoiding the subject. Friendship nodes retain active-state outlines.
+- White marker: patient zero. Pink marker/radius: subject/avoidance boundary.
+- Gold chain: patient zero to newest rumour recipient. White chain: selected agent.
+- T arrows: red rumour, green correction, grey explicit rejection.
+- Size and leaderboard use direct attributed recipients, not downstream reach.
+  Counts can tie. No transmission-count cap or guaranteed leading spreader.
+- Chart: 400x220. Panel: three spreader rows and three recent-pass rows.
 
-## References
-1. Le Nguyen, "Simulation 102: Agent-Based Disease Modeling", Medium, 2023. https://medium.com/@ln8378/simulation-102-agent-based-disease-modeling-17307f2de2f3
-2. Hayes, "Rumours and Errours", American Scientist. https://www.americanscientist.org/article/rumours-and-errours
-3. "The Maki-Thompson rumour model: a detailed analysis". https://www.sciencedirect.com/science/article/abs/pii/S1364815200000293
-4. "Theory of rumour spreading in complex social networks" (arXiv 0807.1458). https://ar5iv.labs.arxiv.org/html/0807.1458
-5. "Rumour Spreading In Community Based Networks" (arXiv 2607.08546). https://arxiv.org/html/2607.08546v1
-6. "Network Segregation in a Model of Misinformation and Fact-checking" (arXiv 1610.04170). https://ar5iv.labs.arxiv.org/html/1610.04170
-7. "Agent Based Rumor Spreading in a scale-free network" (arXiv 1805.05999). https://ar5iv.arxiv.org/html/1805.05999
-8. "Controlling the Misinformation Diffusion in Social Media by ..." (Springer). https://link.springer.com/chapter/10.1007/978-3-031-64193-0_9
-9. Numba docs, "Automatic parallelization with @jit". https://numba.pydata.org/numba-doc/dev/user/parallel.html
+## Code
 
-Original Daley-Kendall (1965) and Maki-Thompson (1973) papers: no free link found, cited via the sources above.
+| File | Responsibility |
+|---|---|
+| `agent.py` | States, timers, belief and friendship transitions |
+| `movement.py` | Random walk, group visits, avoidance routing |
+| `simulation.py` | Population setup, snapshot transmission, statistics |
+| `main.py` | CLI, defaults, live/headless entry points |
+| `viewer_arcade.py` | Base viewer, panels, graph, controls |
+| `viewer_friendships.py` | Friendship and avoidance overlays |
+| `viewer_effects.py` | Thin arrows and avoidance indicator helpers |
+| `plots.py` | Headless plots |
+| `tests/` | Regression tests |
+
+Model rules, defaults, changes and outstanding work: [notes.md](notes.md).
+Attribution and source links: [references.md](references.md).

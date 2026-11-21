@@ -1,18 +1,8 @@
-"""
-Team Char Siu
-Members: Ariel Fajimiyo (more names to be added)
-Module: Agent-based simulation project (serial + parallel)
-
-ARTICLE: marks things taken from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1.
-Comments without a tag are ours.
-
-File: plots.py
-Static plots saved after a headless run.
-"""
+"""Headless plots. Curve adapted from Le Nguyen; references.md, source 1."""
 import textwrap
 import numpy as np
 import matplotlib
-matplotlib.use("Agg")           # we only save pictures here, the live window is separate
+matplotlib.use("Agg")           # Set backend before importing pyplot.
 import matplotlib.pyplot as plt
 from movement import GROUP_NAMES
 
@@ -22,7 +12,7 @@ GROUP_COLOURS = ["#f4a261", "#4361ee", "#9d4edd", "#8d6e63"]
 
 
 def plotCurve(counts, name, rumour):
-    # ARTICLE: infection curve. ours has one line per state
+    # ARTICLE: infection curve, extended to four states.
     plt.figure()
     for k in range(4):
         plt.plot(counts[:, k], color=COLOURS[k], label=NAMES[k])
@@ -35,7 +25,6 @@ def plotCurve(counts, name, rumour):
 
 
 def plotGroupSpreaders(groupCounts, name):
-    # spreaders over time per home group, shows how late the rumour reaches each group
     plt.figure()
     plt.plot(groupCounts[:, 0], color="grey", linestyle=":", label="No group")
     for g in range(len(GROUP_NAMES)):
@@ -49,8 +38,6 @@ def plotGroupSpreaders(groupCounts, name):
 
 
 def plotNearSubject(near, name, heardAt, radius):
-    # how many agents are close to the subject over time, and how many of those believe the rumour.
-    # the dashed line is the step the subject finds out
     plt.figure()
     plt.plot(near[:, 0], color="#264653", label="everyone near the subject")
     plt.plot(near[:, 1], color="#d62828", label="believers near the subject")
@@ -65,7 +52,6 @@ def plotNearSubject(near, name, heardAt, radius):
 
 
 def plotTree(agents, name):
-    # who told who. one row per hop from patient zero, a line from each agent to whoever told them
     ever = [i for i in range(len(agents)) if agents[i].generation >= 0]
     if len(ever) == 0:
         return
