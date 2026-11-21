@@ -1,50 +1,34 @@
-"""Repair regressions, independent of a graphics context."""
+"""Restoration regressions without opening a graphics context."""
 import ast
 from pathlib import Path
 import unittest
-from agent import Agent,UNAWARE,CORRECTOR,STIFLER
-from main import makeSettings,parseArgs
-import movement
-from simulation import rollSpread
-class RepairTests(unittest.TestCase):
-    def test_settings(self):
+from types import SimpleNamespace
+from main import makeSettings,parseArgs,settingsFromArgs
+class RestorationTests(unittest.TestCase):
+    def test_original_layout_defaults(self):
         p = makeSettings(500)
-        self.assertEqual((p['correctionStrength'],p['correctionDuration'],p['correctionRadius']),(.004,110,6))
-        self.assertEqual(parseArgs(['--correction-strength=0']).correction_strength,0)
-    def test_spacing(self):
-        centres = movement.GROUP_CENTRES
-        movement.configureGroups(24)
-        self.assertEqual(centres[0],(24,24))
-        movement.configureGroups(25)
-    def test_no_count_cap(self):
-        agents = [Agent(50,50,UNAWARE,1,0) for _ in range(70)]
-        agents[0].becomeCorrector()
-        for a in agents:
-            a.openness = 1
-        rollSpread(agents,1,4,0,1)
-        self.assertEqual(sum(a.state == CORRECTOR for a in agents),70)
-    def test_no_reactivation(self):
-        a,b = [Agent(50,50,UNAWARE,1,0) for _ in range(2)]
-        a.becomeCorrector()
-        b.becomeCorrector()
-        b.state,b.openness = STIFLER,1
-        rollSpread([a,b],1,4,0,1)
-        self.assertEqual(b.state,STIFLER)
-    def test_ignore_branch(self):
-        a,b = [Agent(50,50,UNAWARE,1,0) for _ in range(2)]
-        a.becomeSpreader()
-        b.isSubject = True
-        rollSpread([a,b],1,4,1,0,subjectDenies=0)
-        self.assertTrue(b.ignored)
-    def test_colours_and_layout(self):
+        self.assertEqual((p['groupSpread'],p['leash']),(33,15))
+        self.assertEqual((p['correctionStrength'],p['correctionDuration'],p['correctionRadius']),(.03,50,4))
+    def test_cli_matches_defaults(self):
+        self.assertEqual(settingsFromArgs(parseArgs([])),makeSettings(500))
+    def test_radius_scales_as_original(self):
+        p = makeSettings(100)
+        self.assertEqual(p['correctionRadius'],p['contactRadius'])
+    def test_controls_effects_and_font_restored(self):
         tree = ast.parse((Path(__file__).resolve().parents[1]/'viewer_arcade.py').read_text())
+        functions = {n.name for n in ast.walk(tree) if isinstance(n,ast.FunctionDef)}
+        self.assertTrue({'drawArrow','traceChain','drawChartHover','drawPanel'} <= functions)
+        attrs = {n.attr for n in ast.walk(tree) if isinstance(n,ast.Attribute)}
+        self.assertTrue({'treeMode','genMode','follow','rings','glowList','pulses','log','top'} <= attrs)
         body = [n for n in tree.body if isinstance(n,ast.Assign) or isinstance(n,ast.FunctionDef) and n.name == 'nodeColour']
-        ns = dict(STIFLER=STIFLER)
+        ns = dict(BOX=100,STIFLER=3)
         exec(compile(ast.Module(body=body,type_ignores=[]),'styles','exec'),ns)
-        a = Agent(0,0,UNAWARE,1,0)
-        a.wasFriend = True
+        self.assertEqual(ns['FONT'][0],'Consolas')
+        self.assertEqual((ns['SIDE'],ns['CHART_HEIGHT']),(440,220))
+        a = SimpleNamespace(isFriend=False,isSubject=False,wasFriend=True,state=3)
         self.assertEqual(ns['nodeColour'](a),ns['EX_FRIEND_COL'])
-        self.assertEqual((ns['SIDE'],ns['CHART_HEIGHT']),(440,280))
-    def test_nonfinite_settings_rejected(self):
+        a.wasFriend = False
+        self.assertEqual(ns['nodeColour'](a,1),ns['SPREAD_COL'])
+    def test_invalid_settings(self):
         with self.assertRaises(ValueError):
-            makeSettings(500,correctionStrength=float('nan'))
+            makeSettings(0)

@@ -10,16 +10,19 @@ def positiveInt(value):
         raise argparse.ArgumentTypeError('must be positive')
     return n
 
-def makeSettings(n,correctionStrength=.004,groupSpread=25,leash=20,avoidVisualBuffer=1.15,correctionDuration=110,correctionRadius=6):
+def makeSettings(n,correctionStrength=.03,groupSpread=33,leash=15,avoidVisualBuffer=1.15,correctionDuration=50,correctionRadius=None):
     if not isinstance(n,int) or isinstance(n,bool) or n <= 0:
         raise ValueError('population must be a positive integer')
+    contactRadius = 4*math.sqrt(500/n)
+    if correctionRadius is None:
+        correctionRadius = contactRadius
     if not all(math.isfinite(v) for v in (correctionStrength,groupSpread,leash,avoidVisualBuffer,correctionDuration,correctionRadius)):
         raise ValueError('settings must be finite')
     if not 0 <= correctionStrength <= 1 or correctionDuration <= 0 or correctionRadius <= 0:
         raise ValueError('invalid correction strength, duration or radius')
     if not 0 < groupSpread < 50 or not 0 < leash <= min(groupSpread,50-groupSpread) or avoidVisualBuffer < 1:
         raise ValueError('invalid spacing, leash or buffer')
-    return dict(stepSize=1.5,contactRadius=4*math.sqrt(500/n),rumourStrength=.06,
+    return dict(stepSize=1.5,contactRadius=contactRadius,rumourStrength=.06,
         correctionStrength=correctionStrength,correctionStart=60,correctionSeeds=0,correctionDuration=correctionDuration,correctionRadius=correctionRadius,
         minInterest=.5,subjectDenies=1.,avoidRadius=7,avoidChance=.75,noticeAfter=20,nearRadius=10,
         leash=leash,travelChance=.003,travelSpeed=2.,stayLength=40,groupSpread=groupSpread,avoidVisualBuffer=avoidVisualBuffer)
@@ -31,9 +34,9 @@ def parseArgs(argv=None):
     p.add_argument('--steps',type=positiveInt,default=400)
     p.add_argument('--seed',type=int,default=42)
     p.add_argument('--headless',action='store_true')
-    for name,default in [('correction-strength',.004),('group-spread',25),('leash',20),('avoid-visual-buffer',1.15),('correction-radius',6)]:
+    for name,default in [('correction-strength',.03),('group-spread',33),('leash',15),('avoid-visual-buffer',1.15),('correction-radius',None)]:
         p.add_argument('--'+name,type=float,default=default)
-    p.add_argument('--correction-duration',type=positiveInt,default=110)
+    p.add_argument('--correction-duration',type=positiveInt,default=50)
     args = p.parse_args(argv)
     if not 0 <= args.seed < 2**32:
         p.error('seed must be between 0 and 4294967295')
