@@ -1,177 +1,145 @@
 # Technical notes
 
-Primary implementation reference. These are implemented rules, not validation
-of the social extensions by the infection article. Sources: [references.md](references.md).
-
-## Index
-
-[Model](#model) | [Transmission](#transmission) | [Movement](#movement) |
-[Update order](#update-order) | [Statistics](#statistics) |
-[Defaults](#defaults) | [Limits](#limits) | [Outstanding work](#outstanding-work)
+Core design and formulas. The project adapts a mobile-agent contagion approach;
+friendship, correction, avoidance and related social rules are project extensions,
+not claims of faithful article reproduction. Sources: [references.md](references.md).
 
 ## Model
 
-| State | Meaning / exit |
-|---|---|
-| Unaware | No message accepted; may accept rumour or correction |
-| Spreader | Shares rumour; expires or accepts correction |
-| Corrector | Shares correction; expires |
-| Stifler | Silent believer, expired sharer or explicit rejecter; may accept first correction |
+Agents occupy one of four states:
 
-Belief, sharing, friendship and avoidance are separate. Expiry preserves belief.
-Correction clears belief/avoidance, not lost friendship. Previously corrected
-stiflers do not restart correction activity on repeated exposure.
+$$
+\text{Unaware} \rightarrow \text{Spreader or Stifler},
+\qquad
+\text{Spreader} \rightarrow \text{Stifler or Corrector},
+\qquad
+\text{Corrector} \rightarrow \text{Stifler}.
+$$
 
-Domain: 100x100. Centres: (33,33), (67,33), (33,67), (67,67); radius 15.
-No-group probability: 0.2. Patient zero is in A; subject in D. Up to 12 friends
-are selected across all groups/no-group agents; four start nearby and linger.
-Friendship does not change home group. Shape follows membership, not location.
+A spreader shares the rumour; a corrector shares the correction; a stifler is
+inactive. Belief, sharing, friendship and avoidance are separate. Timer expiry
+preserves belief. Correction clears belief and avoidance, but does not restore
+friendship. Previously corrected stiflers cannot restart correction activity.
 
-## Transmission
+The world is a $100 \times 100$ domain with four circular groups. One agent is
+the rumour source; one agent is the subject. A fixed number of friends are
+selected across groups and no-group agents; some start near the subject.
 
-Method: `simulation.rollSpread`. For recipient i, let g_i=gullibility,
-o_i=openness and beta_r/beta_c=message strengths. Neighbours read old states.
+## Rumour and correction
 
-```text
-D_ij = sqrt((x_i-x_j)^2 + (y_i-y_j)^2)
-A_r(i,j) = 1[i != j and D_ij < contactRadius]
-A_c(i,j) = 1[i != j and D_ij < correctionRadius]
-nr_i = sum_j A_r(i,j)*1[state_j == SPREADER]
-nc_i = sum_j A_c(i,j)*1[state_j == CORRECTOR]
-P_r(i) = 1 - (1 - g_i*beta_r)^nr_i
-P_c(i) = 1 - (1 - o_i*beta_c)^nc_i
-P(share | rumour accepted) = m + (1-m)*s_i
-```
+For recipient $i$, let $g_i$ be gullibility, $o_i$ correction openness, and
+$\beta_r,\beta_c$ the rumour and correction strengths. Let $n^r_i$ and $n^c_i$
+be the numbers of nearby active spreaders and correctors.
 
-The aggregate probabilities assume independent contact opportunities. Code draws
-one Bernoulli per message/recipient. If both succeed for an unaware agent, a fair
-coin chooses one. Sender credit is uniform among eligible nearby active senders.
-Changes apply after sampling; no same-step contagion cascade.
+$$
+P_r(i)=1-\left(1-g_i\beta_r\right)^{n^r_i}
+$$
 
-m=minInterest; s_i=sharingTendency (reuses interest). Openness and loyalty are
-independent per-agent samples. No loudness/influence trait is implemented.
-Acceptance without sharing creates a silent believer. Failed acceptance leaves
-the agent unaware. Explicit rejection currently uses the subject-denial branch;
-subjectDenies=1 yields denial/correction, so zero explicit rejections is expected.
-Uncorrected stiflers and active spreaders can accept correction.
+$$
+P_c(i)=1-\left(1-o_i\beta_c\right)^{n^c_i}
+$$
 
-Methods: `Agent.acceptBelief`, `becomeCorrector`, `tick`.
+These use the complement rule for at least one success among independent
+contact opportunities: $P(\text{at least one})=1-\prod_j(1-p_j)$.
+[web:461][web:471]
 
-```text
-P(friendship ends | first belief) = 1-loyalty_i
-P(avoid | non-friend's first belief) = avoidChance
-counter(t+1)=counter(t)-1 for active agents; counter<=0 -> STIFLER
-```
+If both messages succeed for an unaware agent, a fair coin selects one. Sender
+credit is sampled uniformly from eligible nearby active senders. Transmission
+uses a state snapshot, so changes are applied after all recipients are sampled.
 
-Breakup forces avoidance and ends lingering. Loyal friends may believe/share
-without avoiding. Non-friend avoidance is drawn once. Recovery is fixed-duration,
-not exponential recovery with a fitted gamma.
+An accepted rumour is shared with probability
+
+$$
+P(\text{share}\mid\text{rumour accepted})=m+(1-m)s_i,
+$$
+
+where $m$ is minimum interest and $s_i$ is sharing tendency. Accepted but
+unshared rumour creates a silent believer; failed acceptance leaves the agent
+unaware. These sharing and correction rules are project extensions.
+
+The rumour framework follows the ignorant–spreader–stifler structure of the
+Maki–Thompson model: spreaders pass rumours to ignorants, while contact with
+another spreader or a stifler can stop spreading. [web:463][web:464]
+
+## Friendship and avoidance
+
+On first believing the rumour, a friend ends the friendship with probability
+
+$$
+P(\text{friendship ends})=1-\ell_i,
+$$
+
+where $\ell_i$ is loyalty. A breakup forces avoidance and ends lingering.
+A non-friend begins avoiding with probability $a_i$; loyal friends may remain
+nearby. These social rules are project extensions.
+
+Avoidance uses a hard exclusion radius around the subject and a wider soft zone.
+For distance $d$ from the subject, with hard radius $r_h$ and outer radius
+$r_o$, outward pressure is applied when $r_h<d<r_o$:
+
+$$
+\Delta p=\text{step}\cdot\frac{r_o-d}{r_o-r_h}.
+$$
 
 ## Movement
 
-Methods: `randomPointNear`, `randomWalk`, `moveAgent`, `moveAgents`.
+Initial positions in a group circle use uniform polar sampling:
 
-```text
-Disk sample: theta=2*pi*U1; r=R*sqrt(U2)
-p=(cx+r*cos(theta),cy+r*sin(theta))
-Walk: p'=p+stepSize*(U(-1,1),U(-1,1))
-Travel: p'=p+min(travelSpeed,||c-p||)*(c-p)/||c-p||
-R_outer=avoidRadius*avoidVisualBuffer
-Outward pressure=stepSize*(R_outer-d)/(R_outer-avoidRadius)
-```
+$$
+\theta=2\pi U_1,
+\qquad
+r=R\sqrt{U_2},
+$$
 
-U1/U2 are independent uniforms; sqrt produces uniform disk area. Coordinates are
-clamped to the box; wanderers project back to the target group circle. Visits
-travel to another group, stay, then return. Lingering friends use a subject-centred
-region. Soft pressure applies only for avoidRadius<d<R_outer. Alternate targets
-reduce attraction toward a centre blocked by the subject; tangential fallback remains.
+where $U_1$ and $U_2$ are independent uniform samples. The square root makes
+the radial distribution uniform by area rather than clustering points near the
+centre. [web:462][web:468]
 
-Methods: `segmentDistance`, `safeMove`. For segment p->q and subject centre c:
-
-```text
-v=q-p
-t=clip(((c-p) dot v)/(v dot v),0,1); t=0 if v dot v=0
-d_segment=||p+t*v-c||
-Accept path if d_segment>=avoidRadius
-```
-
-Blocked paths try safe tangential/outward movement. Existing overlaps evacuate
-to a feasible boundary point; not speed-limited physics or global path planning.
-A moving subject can create overlaps between updates. Display easing also uses
-the collision guard.
-
-Subject awareness (`stepSimulation`): accumulate observations of avoiders within
-avoidRadius+2. At noticeAfter, start correction without an invented teller/hop.
-Direct rumour contact can also trigger denial.
+Random walking adds bounded random displacement each step. Group members may
+travel between groups, remain for a fixed stay period, then return home.
+No-group agents move across the whole domain.
 
 ## Update order
 
-```text
-set correction duration and pending avoidance probability
-subject observation -> subject movement -> other movement / avoidance
-timer expiry -> sample snapshot transmissions -> apply transitions
-configured correction seeds -> record counts
-```
-
-Movement and RNG draws remain ordered. Snapshot contagion alone does not provide
-serial/parallel equivalence.
+Each step updates subject awareness, movement and avoidance, agent timers,
+then samples transmission from a snapshot of the old states. Transitions are
+applied after sampling, preventing a recipient from spreading within the same
+step. The RNG draw order remains sequential in the current serial version.
 
 ## Statistics
 
-Methods: `countStates`, `countSpreadersByGroup`, `nearSubject`, `transmissionStats`.
+Let $N_k(t)$ be the number of agents in state $k$ at step $t$:
 
-```text
-N_k(t)=sum_i 1[state_i(t)==k]; sum_k N_k(t)=N
-Told_j=sum_i 1[infector_i==j]
-Near_all=sum_(i != subject) 1[distance(i,subject)<nearRadius]
-Near_believers=sum_(i != subject) 1[distance<nearRadius and believed_i]
-```
+$$
+N_k(t)=\sum_{i=1}^{N}\mathbf{1}\{s_i(t)=k\},
+\qquad
+\sum_kN_k(t)=N.
+$$
 
-Direct-told is attributed recipients, not descendants, correction sources or all
-conversations. Equal counts can tie. Live joint-rank display remains outstanding.
+Direct recipients of agent $j$ are counted from infector links:
 
-Rendering methods: `RumourWindow.on_update`, `FriendshipWindow.on_draw`.
+$$
+T_j=\sum_{i=1}^{N}\mathbf{1}\{\text{infector}_i=j\}.
+$$
 
-```text
-Base radius: inactive=3.25px; active=5.75px; hop view=4.75px
-S mode, Told>0: radius=max(base,min(16,3+3*sqrt(Told)))
-Diamond offsets: (0,1.5r),(.75r,0),(0,-1.5r),(-.75r,0)
-p_shown += (p_real-p_shown)*(1-exp(-14*dt))
-```
-
-The size ceiling does not cap transmissions. Original font/sprites retained;
-intro=3s hold+2s glide. Pink=friend/subject; violet=ex-friend; orange=inactive former
-sharer. Red rings follow avoiding, not all belief. Correction does not restore
-friendship colour. Chart=400x220; three visible leaderboard/log rows. T arrows,
-F gold chains, G hop colours, H group rings and top-five tracking remain.
+This is a direct-transmission count, not downstream reach. Equal counts are
+valid; the live viewer still highlights the first listed leader when counts tie.
 
 ## Defaults
 
 | Setting | Value | CLI |
 |---|---:|---|
-| Population / steps / seed | 500 / 400 / 42 | --n / --steps / --seed |
-| Centre distance from edges / radius | 33 / 15 | --group-spread / --leash |
-| Correction strength / duration | 0.03 / 50 | --correction-strength / --correction-duration |
-| Correction radius | Contact radius | --correction-radius |
-| Avoidance outer-zone multiplier | 1.15 | --avoid-visual-buffer |
+| Population / steps / seed | 500 / 400 / 42 | `--n` / `--steps` / `--seed` |
+| Centre distance from edges / group radius | 33 / 15 | `--group-spread` / `--leash` |
+| Correction strength / duration | 0.03 / 50 | `--correction-strength` / `--correction-duration` |
+| Correction radius | Contact radius | `--correction-radius` |
+| Avoidance outer-zone multiplier | 1.15 | `--avoid-visual-buffer` |
 
-Code settings: contactRadius=4*sqrt(500/N), rumourStrength=0.06,
-rumour active duration=50, stepSize=1.5, travelChance=0.003, travelSpeed=2,
-stayLength=40, minInterest=0.5, subjectDenies=1, avoidRadius=7,
-avoidChance=0.75, noticeAfter=20, nearRadius=10, correctionStart=60,
-correctionSeeds=0. No correction-count cap. These are main.py defaults;
-Agent.correctionDuration and stepSimulation fallback still use 110 without matching settings.
-
-## Implementation record
-
-| Commit/change | Scope |
-|---|---|
-| 161a6b6 | Social rules, strict avoidance, import-safe CLI, tests |
-| b4e128e / f2c008c | Superseded changes/placeholder failure; repaired later |
-| e69665a | Source repair, configurable correction/spacing |
-| 732f8a3 | Original viewer, compact groups, baseline correction defaults |
-| f64e8db / f9c79f9 | Avoidance rings/thin arrows; documentation consolidation |
-| 79bd57b / ac2168b | Larger agents and pointed no-group diamonds |
+Contact radius is $4\sqrt{500/N}$. Rumour strength is $0.06$; rumour active
+duration is $50$ steps. Other code defaults include step size $1.5$, travel
+chance $0.003$, travel speed $2$, stay length $40$, minimum interest $0.5$,
+avoidance radius $7$, avoidance chance $0.75$, notice threshold $20$, and
+near-subject radius $10$. There is no correction-count cap.
 
 ## Limits
 
@@ -179,11 +147,12 @@ Agent.correctionDuration and stepSimulation fallback still use 110 without match
 python -m unittest discover -s tests -v
 ```
 
-- Global NumPy RNG: draw order matters; same seed does not establish cross-version
-  reproducibility or serial/parallel equivalence.
-- Dense distance/contact matrices: O(N^2) space/work.
-- Added social rules and chosen parameters are assumptions, not article validation.
-- Historical seed-specific counts are not regression targets or benchmark findings.
+- The global NumPy RNG makes draw order important; the same seed does not
+  establish cross-version reproducibility or serial/parallel equivalence.
+- Dense distance/contact matrices require $O(N^2)$ space and work.
+- Social rules and chosen parameters are experimental assumptions, not
+  validation from the source article.
+- Historical seed-specific counts are not regression targets or benchmark results.
 
 ## Outstanding work
 
