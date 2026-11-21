@@ -1,12 +1,10 @@
-# Technical notes
+# Notes
 
-Core design and formulas. The project adapts a mobile-agent contagion approach;
-friendship, correction, avoidance and related social rules are project extensions,
-not claims of faithful article reproduction. Sources: [references.md](references.md).
+Project notes. Based on Le Nguyen's mobile-agent disease simulation [1].
+Friendship, correction, avoidance and the subject are our additions, not exact
+parts of the article.
 
-## Model
-
-Agents occupy one of four states:
+## States
 
 $$
 \text{Unaware} \rightarrow \text{Spreader or Stifler},
@@ -16,66 +14,72 @@ $$
 \text{Corrector} \rightarrow \text{Stifler}.
 $$
 
-A spreader shares the rumour; a corrector shares the correction; a stifler is
-inactive. Belief, sharing, friendship and avoidance are separate. Timer expiry
-preserves belief. Correction clears belief and avoidance, but does not restore
-friendship. Previously corrected stiflers cannot restart correction activity.
+- Spreaders share the rumour.
+- Correctors share the correction.
+- Stiflers are inactive.
+- Belief, sharing, friendship and avoidance are separate.
+- Correction removes belief/avoidance but does not fix friendships.
 
-The world is a $100 \times 100$ domain with four circular groups. One agent is
-the rumour source; one agent is the subject. A fixed number of friends are
-selected across groups and no-group agents; some start near the subject.
+There are four groups in a 100x100 world. One patient zero starts in group A.
+One subject starts in group D. Some friends start near the subject.
 
 ## Rumour and correction
 
-For recipient $i$, let $g_i$ be gullibility, $o_i$ correction openness, and
-$\beta_r,\beta_c$ the rumour and correction strengths. Let $n^r_i$ and $n^c_i$
-be the numbers of nearby active spreaders and correctors.
+For agent $i$:
+
+- $g_i$ = gullibility
+- $o_i$ = correction openness
+- $\beta_r$ = rumour strength
+- $\beta_c$ = correction strength
+- $n^r_i$ = nearby active spreaders
+- $n^c_i$ = nearby active correctors
 
 $$
-P_r(i)=1-\left(1-g_i\beta_r\right)^{n^r_i}
+P_r(i)=1-(1-g_i\beta_r)^{n^r_i}
 $$
 
 $$
-P_c(i)=1-\left(1-o_i\beta_c\right)^{n^c_i}
+P_c(i)=1-(1-o_i\beta_c)^{n^c_i}
 $$
 
-These use the complement rule for at least one success among independent
-contact opportunities: $P(\text{at least one})=1-\prod_j(1-p_j)$.
-[web:461][web:471]
-
-If both messages succeed for an unaware agent, a fair coin selects one. Sender
-credit is sampled uniformly from eligible nearby active senders. Transmission
-uses a state snapshot, so changes are applied after all recipients are sampled.
-
-An accepted rumour is shared with probability
+This is the usual "at least one success" calculation:
 
 $$
-P(\text{share}\mid\text{rumour accepted})=m+(1-m)s_i,
+P(\text{at least one})=1-\prod_j(1-p_j).
 $$
 
-where $m$ is minimum interest and $s_i$ is sharing tendency. Accepted but
-unshared rumour creates a silent believer; failed acceptance leaves the agent
-unaware. These sharing and correction rules are project extensions.
+If both rumour and correction succeed, a coin decides which one is used.
+Sender credit is picked from nearby active senders. We sample from the old
+states, then apply changes after the step.
 
-The rumour framework follows the ignorant–spreader–stifler structure of the
-Maki–Thompson model: spreaders pass rumours to ignorants, while contact with
-another spreader or a stifler can stop spreading. [web:463][web:464]
+If a rumour is accepted, the agent shares it with probability:
 
-## Friendship and avoidance
+$$
+P(\text{share})=m+(1-m)s_i,
+$$
 
-On first believing the rumour, a friend ends the friendship with probability
+where $m$ is minimum interest and $s_i$ is sharing tendency. If they accept but
+do not share, they become a silent believer.
+
+The basic spreader/stifler idea comes from rumour models such as Maki-Thompson [3].
+The article's main idea is that spreaders can pass rumours to unaware agents and
+then stop spreading. [1][2]
+
+## Friends and avoidance
+
+When a friend first believes the rumour:
 
 $$
 P(\text{friendship ends})=1-\ell_i,
 $$
 
-where $\ell_i$ is loyalty. A breakup forces avoidance and ends lingering.
-A non-friend begins avoiding with probability $a_i$; loyal friends may remain
-nearby. These social rules are project extensions.
+where $\ell_i$ is loyalty. They then avoid the subject.
 
-Avoidance uses a hard exclusion radius around the subject and a wider soft zone.
-For distance $d$ from the subject, with hard radius $r_h$ and outer radius
-$r_o$, outward pressure is applied when $r_h<d<r_o$:
+Non-friends may also start avoiding with some probability. Loyal friends can
+stay nearby.
+
+Avoidance has a hard radius and a soft outer zone. If $d$ is the distance from
+the subject, $r_h$ is the hard radius and $r_o$ is the outer radius:
 
 $$
 \Delta p=\text{step}\cdot\frac{r_o-d}{r_o-r_h}.
@@ -83,78 +87,71 @@ $$
 
 ## Movement
 
-Initial positions in a group circle use uniform polar sampling:
+Agents start inside their group circle using:
 
 $$
 \theta=2\pi U_1,
 \qquad
-r=R\sqrt{U_2},
+r=R\sqrt{U_2}.
 $$
 
-where $U_1$ and $U_2$ are independent uniform samples. The square root makes
-the radial distribution uniform by area rather than clustering points near the
-centre. [web:462][web:468]
+The square root is needed so points are spread evenly over the circle area,
+not clustered in the middle. [4]
 
-Random walking adds bounded random displacement each step. Group members may
-travel between groups, remain for a fixed stay period, then return home.
-No-group agents move across the whole domain.
+Agents random walk. Group members can visit another group, stay there, then go
+home. No-group agents move anywhere.
 
 ## Update order
 
-Each step updates subject awareness, movement and avoidance, agent timers,
-then samples transmission from a snapshot of the old states. Transitions are
-applied after sampling, preventing a recipient from spreading within the same
-step. The RNG draw order remains sequential in the current serial version.
+1. Subject notices avoiders.
+2. Subject moves.
+3. Everyone else moves / avoids.
+4. Timers expire.
+5. Rumour and correction are sampled from the old states.
+6. State changes are applied.
+7. Counts are recorded.
 
-## Statistics
-
-Let $N_k(t)$ be the number of agents in state $k$ at step $t$:
-
-$$
-N_k(t)=\sum_{i=1}^{N}\mathbf{1}\{s_i(t)=k\},
-\qquad
-\sum_kN_k(t)=N.
-$$
-
-Direct recipients of agent $j$ are counted from infector links:
+## Counts
 
 $$
-T_j=\sum_{i=1}^{N}\mathbf{1}\{\text{infector}_i=j\}.
+N_k(t)=\sum_i \mathbf{1}\{s_i(t)=k\}.
 $$
 
-This is a direct-transmission count, not downstream reach. Equal counts are
-valid; the live viewer still highlights the first listed leader when counts tie.
+Direct people told by agent $j$:
 
-## Defaults
+$$
+T_j=\sum_i \mathbf{1}\{\text{infector}_i=j\}.
+$$
 
-| Setting | Value | CLI |
-|---|---:|---|
-| Population / steps / seed | 500 / 400 / 42 | `--n` / `--steps` / `--seed` |
-| Centre distance from edges / group radius | 33 / 15 | `--group-spread` / `--leash` |
-| Correction strength / duration | 0.03 / 50 | `--correction-strength` / `--correction-duration` |
-| Correction radius | Contact radius | `--correction-radius` |
-| Avoidance outer-zone multiplier | 1.15 | `--avoid-visual-buffer` |
+This is direct recipients only, not everyone further down the chain.
 
-Contact radius is $4\sqrt{500/N}$. Rumour strength is $0.06$; rumour active
-duration is $50$ steps. Other code defaults include step size $1.5$, travel
-chance $0.003$, travel speed $2$, stay length $40$, minimum interest $0.5$,
-avoidance radius $7$, avoidance chance $0.75$, notice threshold $20$, and
-near-subject radius $10$. There is no correction-count cap.
+## Settings
 
-## Limits
+| Setting | Value |
+|---|---:|
+| Population | 500 |
+| Steps | 400 |
+| Seed | 42 |
+| Group radius | 15 |
+| Correction strength | 0.03 |
+| Correction duration | 50 |
+| Rumour strength | 0.06 |
+| Rumour duration | 50 |
 
-```powershell
-python -m unittest discover -s tests -v
-```
+Contact radius:
 
-- The global NumPy RNG makes draw order important; the same seed does not
-  establish cross-version reproducibility or serial/parallel equivalence.
-- Dense distance/contact matrices require $O(N^2)$ space and work.
-- Social rules and chosen parameters are experimental assumptions, not
-  validation from the source article.
-- Historical seed-specific counts are not regression targets or benchmark results.
+$$
+r_c=4\sqrt{\frac{500}{N}}.
+$$
 
-## Outstanding work
+## Problems
+
+- Current RNG is global, so draw order matters.
+- Same seed does not guarantee the same result across code versions.
+- Contact checking uses dense $N \times N$ matrices, so it is $O(N^2)$.
+- Social rules are our assumptions, not proof from the article.
+
+## To do
 
 - [x] Agents, groups, no-group agents, movement, visiting
 - [x] Rumour + correction spread, stifling
@@ -164,3 +161,14 @@ python -m unittest discover -s tests -v
 - [ ] Parallel version (Numba)
 - [ ] Serial vs parallel equivalence test
 - [ ] Benchmarks (absolute time, speed-up, efficiency)
+
+## References
+
+1. Le Nguyen, *Simulation 102: Agent-Based Disease Modeling*, Medium, 2023.  
+   https://medium.com/@ln8378/simulation-102-agent-based-disease-modeling-17307f2de2f3
+2. Hayes, *Rumours and Errours*, American Scientist.  
+   https://www.americanscientist.org/article/rumours-and-errours
+3. *The Maki-Thompson rumour model: a detailed analysis*.  
+   https://www.sciencedirect.com/science/article/abs/pii/S1364815200000293
+4. Uniform random points in a circle.  
+   https://math.stackexchange.com/questions/1307287/random-uniformly-distributed-points-in-a-circle
