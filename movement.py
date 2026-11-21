@@ -1,5 +1,6 @@
 """Movement for agents, group visits and avoidance"""
 import math
+
 import numpy as np
 
 from agent import NO_GROUP
@@ -32,10 +33,12 @@ def randomPointNear(centre, radius):
 
     x = centre[0] + distance * math.cos(angle)
     y = centre[1] + distance * math.sin(angle)
+
     return x, y
 
 
 def randomPointInBox():
+    """Pick a random point inside box"""
     return tuple(np.random.uniform(0, BOX, 2))
 
 
@@ -45,10 +48,10 @@ def clampToBox(agent):
     agent.y = min(BOX, max(0, agent.y))
 
 
-def randomWalk(agent, step_size):
+def randomWalk(agent, stepSize):
     """Move agent by small random amount"""
-    agent.x += step_size * np.random.uniform(-1, 1)
-    agent.y += step_size * np.random.uniform(-1, 1)
+    agent.x += stepSize * np.random.uniform(-1, 1)
+    agent.y += stepSize * np.random.uniform(-1, 1)
     clampToBox(agent)
 
 
@@ -60,46 +63,48 @@ def currentTarget(agent):
     return agent.group
 
 
-def moveAgent(agent, step_size, travel_chance, travel_speed, leash, stay_length):
+def moveAgent(agent, stepSize, travelChance, travelSpeed, leash, stayLength):
     """Move one agent around its group or towards visited group"""
-    can_travel = (
+    canTravel = (
         agent.group != NO_GROUP
         and agent.visiting is None
-        and np.random.random() < travel_chance
+        and np.random.random() < travelChance
     )
 
-    if can_travel:
-        other_groups = [group for group in range(4) if group != agent.group]
-        agent.visiting = int(np.random.choice(other_groups))
-        agent.stay = stay_length
+    if canTravel:
+        otherGroups = [
+            group for group in range(4) if group != agent.group
+        ]
+        agent.visiting = int(np.random.choice(otherGroups))
+        agent.stay = stayLength
 
     target = currentTarget(agent)
 
     if target == NO_GROUP:
-        randomWalk(agent, step_size)
+        randomWalk(agent, stepSize)
         return
 
     centre = GROUP_CENTRES[target]
-    dx = centre[0] - agent.x
-    dy = centre[1] - agent.y
-    distance = math.hypot(dx, dy)
+    changeX = centre[0] - agent.x
+    changeY = centre[1] - agent.y
+    distance = math.hypot(changeX, changeY)
 
     if distance > leash:
         # move back to group
-        speed = min(distance, travel_speed)
-        agent.x += speed * dx / distance
-        agent.y += speed * dy / distance
+        speed = min(distance, travelSpeed)
+        agent.x += speed * changeX / distance
+        agent.y += speed * changeY / distance
     else:
-        randomWalk(agent, step_size)
+        randomWalk(agent, stepSize)
 
         # keep agent inside group circle
-        dx = agent.x - centre[0]
-        dy = agent.y - centre[1]
-        distance = math.hypot(dx, dy)
+        changeX = agent.x - centre[0]
+        changeY = agent.y - centre[1]
+        distance = math.hypot(changeX, changeY)
 
         if distance > leash:
-            agent.x = centre[0] + dx * leash / distance
-            agent.y = centre[1] + dy * leash / distance
+            agent.x = centre[0] + changeX * leash / distance
+            agent.y = centre[1] + changeY * leash / distance
 
         if agent.visiting is not None:
             agent.stay -= 1
@@ -112,21 +117,30 @@ def moveAgent(agent, step_size, travel_chance, travel_speed, leash, stay_length)
 
 def segmentDistance(start, end, centre):
     """Shortest distance from centre to movement path"""
-    vx = end[0] - start[0]
-    vy = end[1] - start[1]
-    length_squared = vx * vx + vy * vy
+    changeX = end[0] - start[0]
+    changeY = end[1] - start[1]
+    lengthSquared = changeX * changeX + changeY * changeY
 
-    if length_squared == 0:
-        return math.hypot(start[0] - centre[0], start[1] - centre[1])
+    if lengthSquared == 0:
+        return math.hypot(
+            start[0] - centre[0],
+            start[1] - centre[1],
+        )
 
     # closest point on path to centre
-    t = ((centre[0] - start[0]) * vx + (centre[1] - start[1]) * vy) / length_squared
-    t = max(0, min(1, t))
+    progress = (
+        (centre[0] - start[0]) * changeX
+        + (centre[1] - start[1]) * changeY
+    ) / lengthSquared
+    progress = max(0, min(1, progress))
 
-    closest_x = start[0] + t * vx
-    closest_y = start[1] + t * vy
+    closestX = start[0] + progress * changeX
+    closestY = start[1] + progress * changeY
 
-    return math.hypot(closest_x - centre[0], closest_y - centre[1])
+    return math.hypot(
+        closestX - centre[0],
+        closestY - centre[1],
+    )
 
 
 def safeMove(start, desired, centre, radius, side=1):
@@ -135,34 +149,34 @@ def safeMove(start, desired, centre, radius, side=1):
         return desired
 
     # keep destination inside box
-    desired_x = min(BOX, max(0, desired[0]))
-    desired_y = min(BOX, max(0, desired[1]))
-    desired = (desired_x, desired_y)
+    desiredX = min(BOX, max(0, desired[0]))
+    desiredY = min(BOX, max(0, desired[1]))
+    desired = (desiredX, desiredY)
 
-    safe_radius = radius + 1e-6
-    dx = start[0] - centre[0]
-    dy = start[1] - centre[1]
-    distance = math.hypot(dx, dy)
+    safeRadius = radius + 1e-6
+    changeX = start[0] - centre[0]
+    changeY = start[1] - centre[1]
+    distance = math.hypot(changeX, changeY)
 
     # agent too close so put just outside radius
-    if distance < safe_radius:
+    if distance < safeRadius:
         if distance == 0:
             angle = 0
         else:
-            angle = math.atan2(dy, dx)
+            angle = math.atan2(changeY, changeX)
 
-        escape_x = centre[0] + safe_radius * math.cos(angle)
-        escape_y = centre[1] + safe_radius * math.sin(angle)
-        escape = (escape_x, escape_y)
+        escapeX = centre[0] + safeRadius * math.cos(angle)
+        escapeY = centre[1] + safeRadius * math.sin(angle)
+        escape = (escapeX, escapeY)
 
-        if 0 <= escape_x <= BOX and 0 <= escape_y <= BOX:
+        if 0 <= escapeX <= BOX and 0 <= escapeY <= BOX:
             return escape
 
-        # TRY AROUND EDGE IF DIRECT ESCAPE FAILS
-        for angle_step in range(72):
-            angle = angle_step * math.pi / 36
-            x = centre[0] + safe_radius * math.cos(angle)
-            y = centre[1] + safe_radius * math.sin(angle)
+        # try around edge if direct escape fails
+        for angleStep in range(72):
+            angle = angleStep * math.pi / 36
+            x = centre[0] + safeRadius * math.cos(angle)
+            y = centre[1] + safeRadius * math.sin(angle)
 
             if 0 <= x <= BOX and 0 <= y <= BOX:
                 return (x, y)
@@ -174,20 +188,23 @@ def safeMove(start, desired, centre, radius, side=1):
         return desired
 
     # try sideways around subject
-    normal_x = dx / distance
-    normal_y = dy / distance
-    move_length = min(2, math.dist(start, desired))
+    normalX = changeX / distance
+    normalY = changeY / distance
+    moveLength = min(2, math.dist(start, desired))
 
     directions = [
-        (-side * normal_y, side * normal_x),
-        (side * normal_y, -side * normal_x),
-        (normal_x, normal_y),
+        (-side * normalY, side * normalX),
+        (side * normalY, -side * normalX),
+        (normalX, normalY),
     ]
 
-    for direction_x, direction_y in directions:
-        x = start[0] + move_length * direction_x
-        y = start[1] + move_length * direction_y
-        candidate = (min(BOX, max(0, x)), min(BOX, max(0, y)))
+    for directionX, directionY in directions:
+        x = start[0] + moveLength * directionX
+        y = start[1] + moveLength * directionY
+        candidate = (
+            min(BOX, max(0, x)),
+            min(BOX, max(0, y)),
+        )
 
         if segmentDistance(start, candidate, centre) >= radius:
             return candidate
@@ -198,11 +215,11 @@ def safeMove(start, desired, centre, radius, side=1):
 
 def moveAgents(
     agents,
-    step_size,
-    travel_chance,
-    travel_speed,
+    stepSize,
+    travelChance,
+    travelSpeed,
     leash,
-    stay_length,
+    stayLength,
     subject=None,
     avoidRadius=0,
     avoidVisualBuffer=1.15,
@@ -211,11 +228,11 @@ def moveAgents(
     if subject is not None:
         moveAgent(
             subject,
-            step_size,
-            travel_chance,
-            travel_speed,
+            stepSize,
+            travelChance,
+            travelSpeed,
             leash,
-            stay_length,
+            stayLength,
         )
 
     if subject is None:
@@ -230,74 +247,74 @@ def moveAgents(
         start = (agent.x, agent.y)
         moveAgent(
             agent,
-            step_size,
-            travel_chance,
-            travel_speed,
+            stepSize,
+            travelChance,
+            travelSpeed,
             leash,
-            stay_length,
+            stayLength,
         )
 
         if centre is None:
             continue
 
-        dx = agent.x - centre[0]
-        dy = agent.y - centre[1]
-        distance = math.hypot(dx, dy)
+        changeX = agent.x - centre[0]
+        changeY = agent.y - centre[1]
+        distance = math.hypot(changeX, changeY)
 
         # keep lingering friends close to subject
-        linger_distance = max(1, avoidRadius * 0.8)
+        lingerDistance = max(1, avoidRadius * 0.8)
 
-        if agent.isFriend and agent.linger and distance > linger_distance:
-            agent.x = centre[0] + dx * linger_distance / distance
-            agent.y = centre[1] + dy * linger_distance / distance
+        if agent.isFriend and agent.linger and distance > lingerDistance:
+            agent.x = centre[0] + changeX * lingerDistance / distance
+            agent.y = centre[1] + changeY * lingerDistance / distance
 
         if not agent.avoiding or avoidRadius <= 0:
             continue
 
         # avoid based on start position
-        dx = start[0] - centre[0]
-        dy = start[1] - centre[1]
-        distance = math.hypot(dx, dy)
+        changeX = start[0] - centre[0]
+        changeY = start[1] - centre[1]
+        distance = math.hypot(changeX, changeY)
 
-        outer_radius = avoidRadius * avoidVisualBuffer
+        outerRadius = avoidRadius * avoidVisualBuffer
         desired = (agent.x, agent.y)
         target = currentTarget(agent)
 
         # subject blocks group centre so go around
         if target != NO_GROUP:
-            group_centre = GROUP_CENTRES[target]
+            groupCentre = GROUP_CENTRES[target]
 
-            if math.dist(group_centre, centre) < outer_radius + step_size:
+            if math.dist(groupCentre, centre) < outerRadius + stepSize:
                 if distance == 0:
                     angle = agent.routeSide * math.pi / 2
                 else:
-                    angle = math.atan2(dy, dx)
+                    angle = math.atan2(changeY, changeX)
 
                 agent.avoidAngle = angle
 
-                goal_x = centre[0] + (outer_radius + step_size) * math.cos(angle)
-                goal_y = centre[1] + (outer_radius + step_size) * math.sin(angle)
-                goal = (goal_x, goal_y)
+                goalX = centre[0] + (outerRadius + stepSize) * math.cos(angle)
+                goalY = centre[1] + (outerRadius + stepSize) * math.sin(angle)
+                goal = (goalX, goalY)
 
-                vx = goal_x - start[0]
-                vy = goal_y - start[1]
-                goal_distance = math.hypot(vx, vy)
+                goalChangeX = goalX - start[0]
+                goalChangeY = goalY - start[1]
+                goalDistance = math.hypot(goalChangeX, goalChangeY)
 
-                if goal_distance > 1e-9:
-                    speed = min(goal_distance, travel_speed)
+                if goalDistance > 1e-9:
+                    speed = min(goalDistance, travelSpeed)
                     desired = (
-                        start[0] + speed * vx / goal_distance,
-                        start[1] + speed * vy / goal_distance,
+                        start[0] + speed * goalChangeX / goalDistance,
+                        start[1] + speed * goalChangeY / goalDistance,
                     )
 
         # gentle push away in soft avoidance zone
-        if avoidRadius < distance < outer_radius:
-            pressure = step_size * (outer_radius - distance)
-            pressure /= max(outer_radius - avoidRadius, 1e-9)
+        if avoidRadius < distance < outerRadius:
+            pressure = stepSize * (outerRadius - distance)
+            pressure /= max(outerRadius - avoidRadius, 1e-9)
 
             desired = (
-                desired[0] + pressure * dx / distance,
-                desired[1] + pressure * dy / distance,
+                desired[0] + pressure * changeX / distance,
+                desired[1] + pressure * changeY / distance,
             )
 
         agent.x, agent.y = safeMove(
