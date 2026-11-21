@@ -7,7 +7,7 @@ of the social extensions by the infection article. Sources: [references.md](refe
 
 [Model](#model) | [Transmission](#transmission) | [Movement](#movement) |
 [Update order](#update-order) | [Statistics](#statistics) |
-[GIF export](#gif-export) | [Defaults](#defaults) | [Limits](#limits)
+[Defaults](#defaults) | [Limits](#limits)
 
 ## Model
 
@@ -145,49 +145,6 @@ sharer. Red rings follow avoiding, not all belief. Correction does not restore
 friendship colour. Chart=400x220; three visible leaderboard/log rows. T arrows,
 F gold chains, G hop colours, H group rings and top-five tracking remain.
 
-## GIF export
-
-Entry: `gif_export.py`; CPU rendering, no Arcade/OpenGL context.
-
-```powershell
-python gif_export.py "A rumour about the subject" --seed=42
-python gif_export.py "A rumour about the subject" --n=200 --steps=400 --every=4 --fps=15 --width=1000 --output=results/simulation.gif
-```
-
-| Export argument | Default | Meaning |
-|---|---:|---|
-| --output | results/simulation.gif | GIF path |
-| --every | 4 | Model steps between snapshots |
-| --fps | 15 | Playback frames/second |
-| --width | 1000 | Width in pixels; minimum 480 |
-
-Model arguments pass to main.py's parser. Methods:
-
-1. `recordRun`: calls the existing serial step once per step. Records state/group
-   counts and proximity every step. Captures agents at step 0, every interval and
-   the final step; no rerun and no additional random draws.
-2. `snapshot`: copies positions, states, membership, social flags and direct counts.
-   Later agent changes cannot overwrite earlier frames.
-3. `saveGif`: Matplotlib Agg + FuncAnimation + PillowWriter. Synchronized agent
-   view, state curves, proximity curves and statistics from the same recorded step.
-4. JSON sidecar: seed, population, steps, model settings, frame steps, FPS, interval,
-   width and rumour. Package versions are not captured; record the environment separately.
-
-```text
-Frame steps={0,every,2*every,...} union {steps}
-F=ceil(steps/every)+1; approximate playback length=F/fps seconds
-Snapshot memory=O(N*F); cached raster memory can be O(F*width*height)
-```
-
-GIF timing is quantised. Sampling can omit short-lived events; final partial
-interval is included. Uses model positions, not the intro/eased path. Glows,
-transient arrows, hover and selected chains are not reproduced. Marker sizes
-are Matplotlib point units: results renderer, not pixel-identical screen capture.
-
-Reports model+recording and render+encode times separately; neither is model-only
-benchmark time. main.py's headless elapsed time still includes plot generation.
-Large exports can exhaust RAM: reduce width or increase every.
-
 ## Defaults
 
 | Setting | Value | CLI |
@@ -215,17 +172,13 @@ Agent.correctionDuration and stepSimulation fallback still use 110 without match
 | 732f8a3 | Original viewer, compact groups, baseline correction defaults |
 | f64e8db / f9c79f9 | Avoidance rings/thin arrows; documentation consolidation |
 | 79bd57b / ac2168b | Larger agents and pointed no-group diamonds |
-| GIF export | Recorded run, combined animation, JSON sidecar; no model-rule changes |
+| ed8c624 | GIF export removed; model and live viewer unchanged |
 
 ## Limits
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
-
-GIF regressions cover copied snapshots, initial/final sampling, mocked-model
-result/RNG preservation, and an actual Pillow GIF/JSON write. These do not replace
-full-model equivalence tests or live Arcade checks.
 
 - Global NumPy RNG: draw order matters; same seed does not establish cross-version
   reproducibility or serial/parallel equivalence.

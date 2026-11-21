@@ -31,22 +31,6 @@ Headless outputs: `results/curve.png`, `group_spreaders.png`,
 `near_subject.png`, `tree.png`. The printed elapsed time includes plotting;
 it is not a model-only benchmark.
 
-## GIF results
-
-```powershell
-python gif_export.py "A rumour about the subject" --seed=42
-python gif_export.py "A rumour about the subject" --n=200 --steps=400 --every=4 --fps=15 --width=1000 --output=results/simulation.gif
-```
-
-Exports agents, state curves, proximity curves and statistics from one recorded
-run. Writes the GIF and a matching JSON settings file. No Arcade window or
-OpenGL context. Matplotlib/Pillow are already in the dependency list.
-
-`--every` controls model-step sampling; `--fps` controls playback speed. Reduce
-`--width` or increase `--every` to reduce export memory/time. Minimum width: 480.
-The export is not a pixel-identical live recording and does not include the
-intro, glows or transient arrows. See [GIF method](notes.md#gif-export).
-
 ## Controls
 
 | Key | Action |
@@ -89,7 +73,6 @@ intro, glows or transient arrows. See [GIF method](notes.md#gif-export).
 | `viewer_friendships.py` | Friendship and avoidance overlays |
 | `viewer_effects.py` | Thin arrows and avoidance indicator helpers |
 | `plots.py` | Headless plots |
-| `gif_export.py` | Recorded-run GIF and JSON export |
 | `tests/` | Regression tests |
 
 Model rules, equations, methods, defaults and implementation record:
