@@ -1,1 +1,3 @@
-ADDS_EX_FRIEND_COLOUR_AND_USES_SMOOTH_AVOIDANCE
+"""Compatibility entry point for the integrated friendship viewer."""
+from viewer_arcade import RumourWindow,runViewer,describe,EX_FRIEND_COL
+FriendshipWindow = RumourWindow
