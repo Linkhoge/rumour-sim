@@ -1,97 +1,81 @@
+"""Team Char Siu: agent state and experimental social traits.
+Position, timers and contagion structure adapted from Le Nguyen (README ref 1).
+Friendship/loyalty and separate correction/sharing decisions are our model rules.
 """
-Team Char Siu
-Members: Ariel Fajimiyo (more names to be added)
-Module: Agent-based simulation project (serial + parallel)
+import numpy as np
 
-ARTICLE: marks things taken from "Simulation 102: Agent-Based Disease Modeling" (Le Nguyen, 2023), README ref 1.
-Comments without a tag are ours.
-
-File: agent.py
-"""
-
-UNAWARE = 0     # ARTICLE: healthy
-SPREADER = 1    # ARTICLE: infected
-CORRECTOR = 2   # passes on the correction (README refs 6, 7)
-STIFLER = 3     # ARTICLE: recovered. name from Daley-Kendall (README ref 2)
-
-HOW_LONG = 50   # ARTICLE: infectedCounter was 50
-NO_GROUP = -1   # agent has no group
+UNAWARE, SPREADER, CORRECTOR, STIFLER = range(4)
+HOW_LONG = 50
+NO_GROUP = -1
 
 
-class Agent():
-    # ARTICLE: Agent has x, y, infected, resistance, infectedCounter
+class Agent:
     def __init__(self, x, y, state, gullibility, group, counter=0, interest=1.0):
-        self.x = x
-        self.y = y
-        self.state = state                # ARTICLE: infected
-        self.gullibility = gullibility    # ARTICLE: resistance (flipped, see simulation.py)
-        self.counter = counter            # ARTICLE: infectedCounter
-        self.group = group                # home group (0-3) or NO_GROUP
-        self.visiting = None              # group they're visiting right now, None = at home
-        self.stay = 0                     # steps left of the visit
-        # who told who, -1 = nobody
-        self.infector = -1                # who gave them the rumour
-        self.generation = -1              # hops from patient zero, -1 = never had it
-        self.corrSource = -1              # who gave them the correction
-        self.corrGeneration = -1          # hops from the first corrector
-        self.changedAt = -2               # step the state last changed (the viewer uses this to draw arrows)
-        self.interest = interest          # 0 = doesn't care about gossip, 1 = loves it
-        self.isSubject = False            # the rumour is about this agent
-        self.ignored = False              # heard it but didn't pass it on
-        self.heardAt = None               # step they first heard it, None = never
-        self.believed = False             # believes the rumour, so keeps away from the subject
-        self.shunned = 0                  # subject only: how many times believers have been close enough to keep away
+        self.x, self.y, self.state = x, y, state
+        self.gullibility, self.group, self.counter = gullibility, group, counter
+        self.interest = interest
+        self.sharingTendency = interest
+        self.openness = 0.5
+        self.loyalty = 0.5
+        self.visiting, self.stay = None, 0
+        self.infector = self.generation = self.corrSource = self.corrGeneration = -1
+        self.changedAt = -2
+        self.isSubject = self.ignored = self.believed = False
+        self.heardAt = None
+        self.shunned = 0
+        self.isFriend = self.wasFriend = self.linger = False
+        self.friendshipEndedAt = None
+        self.avoiding = False
+        self.avoidChance = 0.75
+        self.beliefDecided = False
+        self.routeSide = 1
+
+    def acceptBelief(self, t):
+        # Only one friendship/avoidance decision, not another draw every step.
+        if self.beliefDecided:
+            return
+        self.beliefDecided = True
+        self.believed = True
+        if self.isFriend:
+            if np.random.random() >= self.loyalty:
+                self.isFriend = self.linger = False
+                self.friendshipEndedAt = t
+                self.avoiding = True
+        else:
+            self.avoiding = np.random.random() < self.avoidChance
 
     def becomeSpreader(self, source=-1, generation=0, t=-1):
-        # ARTICLE: infect() sets infected and the counter. we also remember who told us
-        self.state = SPREADER
-        self.counter = HOW_LONG
-        self.infector = source
-        self.generation = generation
-        self.changedAt = t
-        self.believed = True
+        self.state, self.counter = SPREADER, HOW_LONG
+        self.infector, self.generation, self.changedAt = source, generation, t
+        self.acceptBelief(t)
         if self.heardAt is None:
             self.heardAt = t
 
+    def becomeSilentBeliever(self, source, generation, t):
+        self.becomeSpreader(source, generation, t)
+        self.state, self.counter = STIFLER, 0
+
     def becomeIgnorer(self, source, generation, t):
-        # heard it but doesn't believe it or doesn't care. goes straight to stifler
-        # but still counts as having heard it, and we still record who told them
-        self.state = STIFLER
-        self.counter = 0
-        self.infector = source
-        self.generation = generation
-        self.ignored = True
-        self.changedAt = t
-        self.believed = False
+        self.state, self.counter = STIFLER, 0
+        self.infector, self.generation, self.changedAt = source, generation, t
+        self.ignored, self.believed, self.avoiding = True, False, False
         if self.heardAt is None:
             self.heardAt = t
 
     def becomeSubjectCorrector(self, source, generation, t):
-        # the subject hears the rumour about themselves and denies it. they are the first corrector (hop 0)
-        self.state = CORRECTOR
-        self.counter = HOW_LONG
-        self.infector = source
-        self.generation = generation
-        self.corrSource = -1
-        self.corrGeneration = 0
-        self.changedAt = t
-        self.believed = False
+        self.infector, self.generation = source, generation
         if self.heardAt is None:
             self.heardAt = t
+        self.becomeCorrector(-1, 0, t)
 
     def becomeCorrector(self, source=-1, generation=0, t=-1):
-        # same for the correction, kept separate so the rumour tree stays clean.
-        # someone who changes their mind stops believing, so they stop avoiding the subject
-        self.state = CORRECTOR
-        self.counter = HOW_LONG
-        self.corrSource = source
-        self.corrGeneration = generation
-        self.changedAt = t
-        self.believed = False
+        self.state, self.counter = CORRECTOR, HOW_LONG
+        self.corrSource, self.corrGeneration, self.changedAt = source, generation, t
+        self.believed = self.avoiding = False
+        # Accepting the correction does not automatically repair a friendship.
 
     def tick(self):
-        # ARTICLE: counter counts down, recovers at 0. same for correctors
-        if self.state == SPREADER or self.state == CORRECTOR:
+        if self.state in (SPREADER, CORRECTOR):
             self.counter -= 1
             if self.counter <= 0:
                 self.state = STIFLER
