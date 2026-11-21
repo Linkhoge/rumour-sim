@@ -7,7 +7,7 @@ of the social extensions by the infection article. Sources: [references.md](refe
 
 [Model](#model) | [Transmission](#transmission) | [Movement](#movement) |
 [Update order](#update-order) | [Statistics](#statistics) |
-[Defaults](#defaults) | [Limits](#limits)
+[Defaults](#defaults) | [Limits](#limits) | [Outstanding work](#outstanding-work)
 
 ## Model
 
@@ -187,11 +187,11 @@ python -m unittest discover -s tests -v
 
 ## Outstanding work
 
-1. Run the complete regression suite; record environment and results.
-2. Check live layout, motion, indicators and graph hover.
-3. Add deterministic random streams and an array-based serial reference.
-4. Implement the parallel version and equivalence tests.
-5. Evaluate spatial indexing; measure dense-cell behaviour and load imbalance.
-6. Benchmark model-only runtime, speed-up `S=Ts/Tp` and efficiency `E=S/p`
-   across documented population sizes and worker counts.
-7. Record client feedback, experiments and attribution for submission/viva.
+- [x] Agents, groups, no-group agents, movement, visiting
+- [x] Rumour + correction spread, stifling
+- [x] Live window + headless mode + plots
+- [ ] Seeded RNG per (seed, step, agent)
+- [ ] NumPy array version
+- [ ] Parallel version (Numba)
+- [ ] Serial vs parallel equivalence test
+- [ ] Benchmarks (absolute time, speed-up, efficiency)
