@@ -69,13 +69,15 @@ class Agent:
         self.becomeCorrector(-1, 0, t)
 
     def becomeCorrector(self, source=-1, generation=0, t=-1):
-        self.state, self.counter = CORRECTOR, HOW_LONG
+        # Correctors remain committed for the rest of this run; counter is unused.
+        self.state, self.counter = CORRECTOR, 0
         self.corrSource, self.corrGeneration, self.changedAt = source, generation, t
         self.believed = self.avoiding = False
         # Accepting the correction does not automatically repair a friendship.
 
     def tick(self):
-        if self.state in (SPREADER, CORRECTOR):
+        # Only rumour spreaders lose interest after 50 steps.
+        if self.state == SPREADER:
             self.counter -= 1
             if self.counter <= 0:
                 self.state = STIFLER

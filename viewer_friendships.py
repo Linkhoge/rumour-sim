@@ -39,6 +39,12 @@ def describe(agents, i, p):
 
 
 class FriendshipWindow(base.RumourWindow):
+    def __init__(self, build, steps, p, rumour):
+        # Base layout reads these before creating the window and drawing its chart.
+        base.SIDE = 640
+        base.CHART_HEIGHT = 180
+        super().__init__(build, steps, p, rumour)
+
     def on_update(self, delta_time):
         previous = self.shown.copy()
         super().on_update(delta_time)
